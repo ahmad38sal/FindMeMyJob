@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} — {{ job.company }}{% endblock %}
+{% block content %}
+<a href="/jobs">← Back to jobs</a>
+
+<h1>{{ job.title }}</h1>
+<p class="muted">
+    {{ job.company }}{% if job.team %} · {{ job.team }}{% endif %}
+    {% if job.location %} · {{ job.location }}{% endif %}
+    {% if job.work_mode %} · <span class="badge">{{ job.work_mode }}</span>{% endif %}
+    {% if job.seniority %} · {{ job.seniority }}{% endif %}
+</p>
+
+{% include "_match_section.html" %}
+
+{% include "_salary_panel.html" %}
+
+<section class="panel">
+    <h2>Description</h2>
+    <pre class="jd">{{ job.description }}</pre>
+    {% if job.url %}<p><a href="{{ job.url }}" target="_blank">Original posting →</a></p>{% endif %}
+</section>
+
+<section class="panel">
+    <h2>Tailored resume</h2>
+    {% if resume %}
+        <p class="muted">Targeted keywords: {{ resume.keywords_targeted | join(", ") }}</p>
+        <p style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <a href="/jobs/{{ job.id }}/resume.pdf" class="btn primary" target="_blank">Download tailored PDF</a>
+            <form action="/jobs/{{ job.id }}/tailor" method="post" style="display: inline;">
+                <button type="submit" class="btn">Re-tailor with current profile</button>
+            </form>
+            <span class="muted" style="font-size: 13px">
+                Re-runs tailoring against your latest profile — claims you've added since last tailor will surface.
+            </span>
+        </p>
+        <h3>Diff vs master <span class="muted">(verify nothing was fabricated)</span></h3>
+        {% if resume.diff_from_master %}
+            <table class="diff">
+                <thead><tr><th>Section</th><th>Before</th><th>After</th><th>Kind</th></tr></thead>
+                <tbody>
+                {% for d in resume.diff_from_master %}
+                    <tr class="kind-{{ d.kind|lower }}">
+                        <td>{{ d.section }}</td>
+                        <td>{{ d.before }}</td>
+                        <td>{{ d.after }}</td>
+                        <td><span class="badge">{{ d.kind }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="muted">No changes from master.</p>
+        {% endif %}
+        <h3>Cover letter</h3>
+        <pre class="cover">{{ app.cover_letter }}</pre>
+    {% else %}
+        <form action="/jobs/{{ job.id }}/tailor" method="post">
+            <button type="submit" class="btn primary"
+                    {% if not app or app.match_score is none %}disabled title="Score first"{% endif %}>
+                Tailor for this role
+            </button>
+        </form>
+    {% endif %}
+</section>
+
+{% if resume %}
+<section class="panel">
+    <h2>Apply</h2>
+    <p class="muted">v1 is confirm-mode only. Use the link above to open the posting, then mark applied here.</p>
+    <form action="/jobs/{{ job.id }}/mark-applied" method="post">
+        <button type="submit" class="btn primary">Mark applied</button>
+    </form>
+</section>
+{% endif %}
+{% endblock %}

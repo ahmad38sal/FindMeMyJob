@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+{% block content %}
+<h1>Profile</h1>
+
+<section class="panel">
+    <h2>Import from resume</h2>
+    <p class="muted">Upload a PDF or .docx — Claude parses it into the structured profile below. Review before saving.</p>
+    <form action="/profile/import" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".pdf,.docx,.doc,.txt,.md" required>
+        <button type="submit" class="btn primary">Import</button>
+    </form>
+    <p style="margin-top: 12px"><a href="/profile/master-resume.pdf" class="btn" target="_blank">Download master PDF</a></p>
+</section>
+
+<section class="panel">
+    <h2>Claimed skills <span class="muted">(saved across all jobs)</span></h2>
+    <p class="muted">
+        When you click "I have this" on a job's gap and add context, it lands here.
+        Future scoring and tailoring use this evidence — not just for the job you claimed it on.
+    </p>
+    {% if claimed_skills %}
+        <ul class="claimed-skills">
+            {% for s in claimed_skills %}
+            <li>
+                <div class="claimed-row">
+                    <strong>{{ s.name }}</strong>
+                    <form action="/profile/skills/remove" method="post" style="display:inline; margin-left:auto">
+                        <input type="hidden" name="name" value="{{ s.name }}">
+                        <button type="submit" class="btn small"
+                                onclick="return confirm('Remove this claim from your master profile?')">Remove</button>
+                    </form>
+                </div>
+                <p class="claimed-evidence">{{ s.evidence }}</p>
+            </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted"><em>No claims yet. They show up here once you add context to a gap on any job.</em></p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Apple internal — search filters</h2>
+    <p class="muted">
+        Drives <code>POST /jobs/refresh</code>. Queries are auto-generated from your profile;
+        widen to include adjacent areas, narrow to stick to closest matches.
+        Uncheck queries you don't want, edit them, or add custom ones.
+    </p>
+
+    <form action="/profile/search/regenerate" method="post" style="margin-bottom: 16px">
+        <label>Width:
+            <select name="width">
+                <option value="narrow"  {% if search_width == "narrow"  %}selected{% endif %}>Narrow (3 queries)</option>
+                <option value="medium"  {% if search_width == "medium"  %}selected{% endif %}>Medium (5 queries)</option>
+                <option value="wide"    {% if search_width == "wide"    %}selected{% endif %}>Wide (10 queries)</option>
+            </select>
+        </label>
+        <button type="submit" class="btn">Regenerate from profile</button>
+    </form>
+
+    <form action="/profile/search/save" method="post">
+        {% if search_queries %}
+            <p><strong>Active queries</strong> — uncheck to disable, edit text inline</p>
+            <ul class="search-queries">
+                {% for q in search_queries %}
+                    <li>
+                        <input type="checkbox" name="active_idx" value="{{ loop.index0 }}" checked>
+                        <input type="text" name="query" value="{{ q }}" class="query-input">
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="muted">No queries yet — pick a width above and click "Regenerate from profile".</p>
+        {% endif %}
+
+        <p>
+            <label>Add custom query:
+                <input type="text" name="custom_query" placeholder="e.g. iOS engineer infrastructure" class="query-input">
+            </label>
+        </p>
+
+        <p>
+            <label style="display:block; margin-bottom:4px"><strong>Custom search URL</strong> (overrides the queries above when set)</label>
+            <input type="url" name="custom_url" value="{{ search_url }}"
+                   placeholder="https://careers.apple.com/en-us/search?team=SFTWR&search=ml"
+                   class="query-input" style="width: 100%; max-width: 700px">
+            <span class="muted" style="display:block; font-size:13px; margin-top:4px">
+                Tip: open careers.apple.com, apply your filters, copy the URL from the address bar, paste here.
+            </span>
+        </p>
+
+        <p>
+            <label>Max pages per query:
+                <input type="number" name="max_pages" min="1" max="20" value="{{ search_max_pages }}" style="width: 4em">
+            </label>
+            <span class="muted">(20 jobs per page; 3 = up to 60 jobs per query)</span>
+        </p>
+
+        <input type="hidden" name="width" value="{{ search_width }}">
+        <button type="submit" class="btn primary">Save filters</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>External companies (Greenhouse / Lever)</h2>
+    <p class="muted">
+        One company per line, format <code>source:slug</code> — e.g.
+        <code>greenhouse:stripe</code>, <code>lever:cresta</code>. To find a slug,
+        open a company's careers page that uses Greenhouse or Lever; the slug is
+        the path segment after <code>boards.greenhouse.io/</code> or <code>jobs.lever.co/</code>.
+    </p>
+    <form action="/profile/external/save" method="post">
+        <textarea name="external_companies" rows="6" spellcheck="false"
+                  placeholder="greenhouse:stripe&#10;greenhouse:anthropic&#10;lever:cresta">{{ external_companies }}</textarea>
+
+        <h3 style="margin-top:18px">Free aggregators</h3>
+        <p class="muted">Toggle on to widen discovery without naming companies. All filter against your active queries above.</p>
+        <p>
+            <label>
+                <input type="checkbox" name="use_bundled_directory" value="1" {% if use_bundled_directory %}checked{% endif %}>
+                <strong>Bundled directory</strong> — ~70 popular tech companies on Greenhouse/Lever (Stripe, Anthropic, Notion, Figma, …)
+            </label>
+        </p>
+        <p>
+            <label>
+                <input type="checkbox" name="enable_remoteok" value="1" {% if enable_remoteok %}checked{% endif %}>
+                <strong>RemoteOK</strong> — public feed of remote-only roles (no auth)
+            </label>
+        </p>
+        <p>
+            <label>
+                <input type="checkbox" name="enable_hn_whoishiring" value="1" {% if enable_hn_whoishiring %}checked{% endif %}>
+                <strong>HN "Who is hiring?"</strong> — latest monthly thread, LLM-extracted
+            </label>
+            <label style="margin-left: 16px">limit:
+                <input type="number" name="hn_limit" min="10" max="200" value="{{ hn_limit }}" style="width: 4em">
+            </label>
+            <span class="muted" style="font-size:13px">(each entry is one LLM call)</span>
+        </p>
+
+        <button type="submit" class="btn primary">Save companies + sources</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Structured profile (raw JSON)</h2>
+    <p class="muted">Edit directly. Saved on submit. v1 ships with raw-JSON edit; a richer editor is post-v1.</p>
+    <form action="/profile/save-json" method="post">
+        <textarea name="profile_json" rows="30" spellcheck="false">{{ profile_json }}</textarea>
+        <button type="submit" class="btn primary">Save</button>
+    </form>
+</section>
+
+<style>
+    ul.search-queries { list-style: none; padding: 0; }
+    ul.search-queries li { margin: 6px 0; }
+    .query-input { width: 24em; padding: 4px 6px; font: inherit; border: 1px solid var(--border); border-radius: 4px; }
+</style>
+{% endblock %}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ contact.get("name", "Resume") }}</title>
+    <style>
+        @page { size: Letter; margin: 0.55in 0.6in; }
+
+        :root {
+            --fg: #1a1a1a;
+            --muted: #555;
+            --accent: #1a1a1a;
+            --rule: #1a1a1a;
+        }
+
+        html, body { margin: 0; padding: 0; }
+        body {
+            font: 10.5pt/1.42 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+            color: var(--fg);
+        }
+
+        /* Header */
+        header.name-block { margin-bottom: 14pt; }
+        h1.name {
+            font-size: 22pt;
+            font-weight: 700;
+            letter-spacing: 0.4pt;
+            margin: 0 0 4pt 0;
+        }
+        .contact {
+            font-size: 9.5pt;
+            color: var(--muted);
+        }
+        .contact a { color: var(--muted); text-decoration: none; }
+        .contact .sep { margin: 0 6pt; color: #aaa; }
+
+        /* Section headers */
+        h2.section {
+            font-size: 11pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2pt;
+            margin: 14pt 0 6pt 0;
+            padding-bottom: 2pt;
+            border-bottom: 0.6pt solid var(--rule);
+        }
+
+        /* Summary */
+        p.summary { margin: 0 0 6pt 0; }
+
+        /* Experience entries */
+        .role { margin-bottom: 9pt; page-break-inside: avoid; }
+        .role-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            font-size: 10.5pt;
+        }
+        .role-title { font-weight: 700; }
+        .role-company { font-weight: 500; }
+        .role-dates { color: var(--muted); font-size: 9.5pt; white-space: nowrap; }
+        .role-meta {
+            font-size: 9.5pt;
+            color: var(--muted);
+            margin-bottom: 2pt;
+        }
+        ul.bullets {
+            list-style: disc;
+            margin: 3pt 0 0 0;
+            padding-left: 16pt;
+        }
+        ul.bullets li { margin: 2pt 0; }
+
+        /* Education */
+        .edu { margin-bottom: 6pt; }
+        .edu-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .edu-school { font-weight: 700; }
+        .edu-meta { color: var(--muted); font-size: 9.5pt; }
+
+        /* Skills */
+        .skills-line { margin: 0 0 4pt 0; }
+        .skills-cat { font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<header class="name-block">
+    <h1 class="name">{{ contact.get("name", "") }}</h1>
+    <div class="contact">
+        {% set parts = [] %}
+        {% if contact.get("email") %}{% set _ = parts.append(contact["email"]) %}{% endif %}
+        {% if contact.get("phone") %}{% set _ = parts.append(contact["phone"]) %}{% endif %}
+        {% if contact.get("location") %}{% set _ = parts.append(contact["location"]) %}{% endif %}
+        {% if contact.get("linkedin") %}{% set _ = parts.append("LinkedIn: " ~ contact["linkedin"]) %}{% endif %}
+        {% if contact.get("github") %}{% set _ = parts.append("GitHub: " ~ contact["github"]) %}{% endif %}
+        {% if contact.get("portfolio") %}{% set _ = parts.append(contact["portfolio"]) %}{% endif %}
+        {% for p in parts %}{{ p }}{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
+    </div>
+</header>
+
+{% if summary %}
+<h2 class="section">Summary</h2>
+<p class="summary">{{ summary }}</p>
+{% endif %}
+
+{% if work_history %}
+<h2 class="section">Experience</h2>
+{% for r in work_history %}
+<div class="role">
+    <div class="role-head">
+        <div>
+            <span class="role-title">{{ r.get("title", "") }}</span>
+            {% if r.get("company") %}<span class="role-company"> — {{ r["company"] }}</span>{% endif %}
+        </div>
+        <div class="role-dates">
+            {{ r.get("start", "") }}{% if r.get("end") %} – {{ r["end"] }}{% else %} – Present{% endif %}
+        </div>
+    </div>
+    {% if r.get("location") %}<div class="role-meta">{{ r["location"] }}</div>{% endif %}
+    {% if r.get("bullets") %}
+    <ul class="bullets">
+        {% for b in r["bullets"] %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if education %}
+<h2 class="section">Education</h2>
+{% for e in education %}
+<div class="edu">
+    <div class="edu-head">
+        <div>
+            <span class="edu-school">{{ e.get("school", "") }}</span>
+            {% if e.get("degree") %} — {{ e["degree"] }}{% endif %}
+            {% if e.get("field") %}, {{ e["field"] }}{% endif %}
+        </div>
+        <div class="edu-meta">
+            {{ e.get("start", "") }}{% if e.get("end") %} – {{ e["end"] }}{% endif %}
+        </div>
+    </div>
+    {% if e.get("gpa") %}<div class="role-meta">GPA: {{ e["gpa"] }}</div>{% endif %}
+    {% if e.get("highlights") %}
+    <ul class="bullets">{% for h in e["highlights"] %}<li>{{ h }}</li>{% endfor %}</ul>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if skills %}
+<h2 class="section">Skills</h2>
+{% set by_cat = {} %}
+{% for s in skills %}
+    {% set cat = s.get("category") or "Other" %}
+    {% if cat not in by_cat %}{% set _ = by_cat.update({cat: []}) %}{% endif %}
+    {% set _ = by_cat[cat].append(s.get("name", "")) %}
+{% endfor %}
+{% for cat, names in by_cat.items() %}
+<p class="skills-line"><span class="skills-cat">{{ cat }}:</span> {{ names | join(", ") }}</p>
+{% endfor %}
+{% endif %}
+
+{% if certifications %}
+<h2 class="section">Certifications</h2>
+{% for c in certifications %}
+<div class="edu">
+    <div class="edu-head">
+        <div><span class="edu-school">{{ c.get("name", "") }}</span>{% if c.get("issuer") %} — {{ c["issuer"] }}{% endif %}</div>
+        <div class="edu-meta">{{ c.get("date_earned", "") }}</div>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+
+</body>
+</html>

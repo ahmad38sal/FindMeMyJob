@@ -1,0 +1,85 @@
+{
+  "manifest_version": 3,
+  "name": "FindMeMyJob",
+  "version": "0.0.1",
+  "description": "Match-aware job-fit badge + tailored-resume attach + ATS form autofill, backed by your local FindMeMyJob.",
+  "action": {
+    "default_title": "FindMeMyJob",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "https://your-findmemyjob-host.example.com/*",
+    "https://boards.greenhouse.io/*",
+    "https://*.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.wd1.myworkdayjobs.com/*",
+    "https://*.wd5.myworkdayjobs.com/*",
+    "https://jobs.apple.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://boards.greenhouse.io/*", "https://*.greenhouse.io/*"],
+      "js": ["content/loaders/greenhouse.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://jobs.lever.co/*"],
+      "js": ["content/loaders/lever.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.myworkdayjobs.com/*"],
+      "js": ["content/loaders/workday.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://jobs.apple.com/*"],
+      "js": ["content/loaders/apple_jobs.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/loaders/generic.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/engine.js",
+        "content/upload.js",
+        "content/adapters/*.js",
+        "lib/*.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

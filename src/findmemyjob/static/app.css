@@ -1,0 +1,309 @@
+:root {
+    --bg: #fafaf8;
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #2563eb;
+    --border: #e5e5e3;
+    --panel: #ffffff;
+    --stretch: #c2410c;
+    --kind-fabricated-bg: #fee2e2;
+    --kind-rephrased-bg: #fef3c7;
+    --kind-kept-bg: #ecfdf5;
+}
+
+* { box-sizing: border-box; }
+body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+}
+header {
+    background: white;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+}
+nav { display: flex; gap: 24px; align-items: center; }
+nav a { color: var(--fg); text-decoration: none; padding: 6px 0; }
+nav a:hover { color: var(--accent); }
+nav .brand { font-weight: 600; margin-right: auto; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+h1 { margin-top: 0; }
+.muted { color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card, .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+}
+.panel { margin: 24px 0; }
+
+.btn {
+    display: inline-block;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--fg);
+    font: inherit;
+}
+.btn:hover { background: #f4f4f2; }
+.btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.btn.primary:hover { background: #1d4ed8; }
+.btn.small { padding: 4px 8px; font-size: 13px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+textarea {
+    width: 100%;
+    font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+}
+
+table.jobs, table.diff {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+table.jobs th, table.jobs td,
+table.diff th, table.diff td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+table.jobs th, table.diff th {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 13px;
+}
+.score { font-weight: 600; }
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #f0f0ee;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.badge.stretch { background: #fed7aa; color: var(--stretch); }
+.badge.status { text-transform: capitalize; }
+
+table.diff tr.kind-fabricated { background: var(--kind-fabricated-bg); }
+table.diff tr.kind-rephrased { background: var(--kind-rephrased-bg); }
+table.diff tr.kind-kept { background: var(--kind-kept-bg); }
+
+pre.jd, pre.cover {
+    white-space: pre-wrap;
+    background: #f7f7f5;
+    padding: 16px;
+    border-radius: 6px;
+    font: 14px/1.5 -apple-system, system-ui, sans-serif;
+}
+
+.query-input {
+    padding: 6px 10px;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+}
+
+.filter-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0;
+}
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+.filter-bar fieldset {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px 8px 12px;
+    margin: 0;
+}
+.filter-bar fieldset legend {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 4px;
+}
+.filter-bar fieldset label {
+    display: inline-block;
+    margin-right: 10px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.filter-more { margin-top: 12px; }
+.filter-more summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 13px;
+    user-select: none;
+    padding: 4px 0;
+}
+.filter-more[open] summary { margin-bottom: 8px; }
+
+ul.gaps { list-style: none; padding: 0; margin: 8px 0; }
+ul.gaps li.gap {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+ul.gaps li.gap:last-child { border-bottom: none; }
+.gap-header { margin-bottom: 6px; }
+.gap-text { font-weight: 600; }
+
+.claim-form {
+    background: #f7f7f5;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin-top: 6px;
+}
+.claim-form textarea {
+    font: 14px/1.45 -apple-system, system-ui, sans-serif;
+    min-height: 48px;
+    margin-bottom: 8px;
+}
+.claim-form .claim-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 0 0;
+}
+.claim-advanced { margin: 4px 0 8px 0; }
+.claim-advanced summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 13px;
+    user-select: none;
+    padding: 2px 0;
+}
+.claim-advanced[open] summary { margin-bottom: 6px; }
+.claim-advanced select {
+    padding: 4px 6px;
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+/* HTMX swap indicators — opacity-toggled by htmx during in-flight requests. */
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; }
+
+ul.claimed-skills { list-style: none; padding: 0; margin: 8px 0; }
+ul.claimed-skills li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+ul.claimed-skills li:last-child { border-bottom: none; }
+.claimed-row { display: flex; align-items: center; gap: 8px; }
+.claimed-evidence {
+    margin: 4px 0 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    white-space: pre-wrap;
+}
+
+/* Salary meter */
+.salary-est-badge {
+    background: #fef3c7;
+    color: #92400e;
+    margin-left: 6px;
+}
+.salary-meter {
+    margin: 18px 0 12px 0;
+    padding-top: 26px; /* space for the marker label */
+}
+.meter-track {
+    position: relative;
+    height: 10px;
+    background: linear-gradient(90deg,
+        #dbeafe 0%,
+        #93c5fd 25%,
+        #60a5fa 50%,
+        #93c5fd 75%,
+        #dbeafe 100%);
+    border-radius: 999px;
+}
+.meter-tick {
+    position: absolute;
+    top: -4px;
+    width: 2px;
+    height: 18px;
+    background: #1f2937;
+    transform: translateX(-1px);
+    border-radius: 1px;
+}
+.meter-marker {
+    position: absolute;
+    top: -22px;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border: 2px solid white;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transform: translateX(-7px);
+}
+.meter-marker::after {
+    /* downward needle into the bar */
+    content: "";
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    width: 2px;
+    height: 16px;
+    background: var(--accent);
+    transform: translateX(-1px);
+}
+.meter-marker-label {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.meter-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.meter-label-median {
+    /* center label sits inline with the median tick visually */
+    font-weight: 600;
+    color: var(--fg);
+}
+.salary-target-source { font-size: 13px; margin: 8px 0 0 0; }
+.salary-rationale { margin: 12px 0 0 0; }
+.salary-rationale summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 13px;
+    user-select: none;
+    padding: 2px 0;
+}
+.salary-rationale[open] summary { margin-bottom: 6px; }

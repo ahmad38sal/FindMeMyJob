@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+
+<section class="panel" style="display:flex; gap:16px; align-items:center; flex-wrap:wrap">
+    <form action="/jobs/refresh" method="post" style="display:inline; margin:0">
+        <button type="submit" class="btn">Refresh from sources</button>
+    </form>
+    <form action="/jobs/add-by-url" method="post" style="display:flex; gap:8px; flex:1; min-width:300px; margin:0">
+        <input type="url" name="url" placeholder="Paste any job URL" required class="query-input" style="flex:1">
+        <button type="submit" class="btn primary">Add by URL</button>
+    </form>
+</section>
+
+<form method="get" action="/jobs" class="filter-bar">
+    <div class="filter-row">
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Search title, company, description…" class="query-input" style="flex:1; min-width:240px">
+        <select name="sort" class="query-input">
+            <option value="score_desc"  {% if filters.sort == "score_desc"  %}selected{% endif %}>Sort: Score ↓</option>
+            <option value="score_asc"   {% if filters.sort == "score_asc"   %}selected{% endif %}>Sort: Score ↑</option>
+            <option value="recent"      {% if filters.sort == "recent"      %}selected{% endif %}>Sort: Most recent</option>
+            <option value="salary_desc" {% if filters.sort == "salary_desc" %}selected{% endif %}>Sort: Salary ↓</option>
+        </select>
+        <select name="score_filter" class="query-input">
+            <option value="all"      {% if filters.score_filter == "all"      %}selected{% endif %}>All</option>
+            <option value="scored"   {% if filters.score_filter == "scored"   %}selected{% endif %}>Scored only</option>
+            <option value="unscored" {% if filters.score_filter == "unscored" %}selected{% endif %}>Unscored only</option>
+        </select>
+        <button type="submit" class="btn">Apply</button>
+        <a href="/jobs" class="btn small">Reset</a>
+    </div>
+
+    <details class="filter-more" {% if filters.source or filters.work_mode or filters.status or filters.min_salary %}open{% endif %}>
+        <summary>More filters</summary>
+        <div class="filter-row">
+            <fieldset>
+                <legend>Source</legend>
+                {% for s in all_sources %}
+                <label><input type="checkbox" name="source" value="{{ s }}" {% if s in filters.source %}checked{% endif %}> {{ s }}</label>
+                {% endfor %}
+                {% if not all_sources %}<span class="muted">no jobs yet</span>{% endif %}
+            </fieldset>
+            <fieldset>
+                <legend>Work mode</legend>
+                {% for m in all_modes %}
+                <label><input type="checkbox" name="work_mode" value="{{ m }}" {% if m in filters.work_mode %}checked{% endif %}> {{ m }}</label>
+                {% endfor %}
+                {% if not all_modes %}<span class="muted">none reported</span>{% endif %}
+            </fieldset>
+            <fieldset>
+                <legend>Application status</legend>
+                {% for s in all_statuses %}
+                <label><input type="checkbox" name="status" value="{{ s }}" {% if s in filters.status %}checked{% endif %}> {{ s }}</label>
+                {% endfor %}
+                {% if not all_statuses %}<span class="muted">none yet</span>{% endif %}
+            </fieldset>
+            <fieldset>
+                <legend>Min salary</legend>
+                <input type="number" name="min_salary" value="{{ filters.min_salary }}" min="0" step="10000" style="width:8em" class="query-input">
+                <span class="muted">jobs with no salary listed are excluded when set</span>
+            </fieldset>
+        </div>
+    </details>
+</form>
+
+<p class="muted" style="margin-top: 12px">Showing {{ shown }} of {{ total }}.</p>
+
+{% if not rows %}
+    <p class="muted">No jobs match the current filters.</p>
+{% else %}
+<table class="jobs">
+    <thead>
+        <tr>
+            <th>Score</th>
+            <th>Title</th>
+            <th>Company / Team</th>
+            <th>Location</th>
+            <th>Source</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td>
+                {% if row.score is not none %}
+                    <span class="score">{{ "%.0f" % row.score }}</span>
+                    {% if row.app and row.app.stretch_required %}<span class="badge stretch">stretch</span>{% endif %}
+                {% else %}
+                    <span class="muted">—</span>
+                {% endif %}
+            </td>
+            <td><a href="/jobs/{{ row.job.id }}">{{ row.job.title }}</a></td>
+            <td>{{ row.job.company }}{% if row.job.team %} · {{ row.job.team }}{% endif %}</td>
+            <td>{{ row.job.location or "—" }} {% if row.job.work_mode %}<span class="badge">{{ row.job.work_mode }}</span>{% endif %}</td>
+            <td><span class="badge">{{ row.job.source }}</span></td>
+            <td>
+                {% if row.app %}<span class="badge status">{{ row.app.status }}</span>{% else %}<span class="muted">unscored</span>{% endif %}
+            </td>
+            <td>
+                {% if not row.app or row.app.match_score is none %}
+                <form action="/jobs/{{ row.job.id }}/score" method="post" style="display:inline">
+                    <button type="submit" class="btn small">Score</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}

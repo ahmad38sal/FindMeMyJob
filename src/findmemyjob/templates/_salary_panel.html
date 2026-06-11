@@ -1,0 +1,86 @@
+<section class="panel salary-panel" id="salary-panel">
+    <h2>
+        Salary
+        {% if job.salary_min or job.salary_max %}
+            <span class="muted" style="font-size: 14px; font-weight: normal">(posted)</span>
+        {% else %}
+            <span class="badge salary-est-badge">estimate · not posted</span>
+        {% endif %}
+    </h2>
+
+    {% if job.salary_min or job.salary_max %}
+        {# Posted range — just display, no LLM call needed. #}
+        <p>
+            <strong>{{ fmt_money(job.salary_min, job.currency) }}</strong>
+            –
+            <strong>{{ fmt_money(job.salary_max, job.currency) }}</strong>
+            <span class="muted">{{ job.currency }}</span>
+        </p>
+    {% elif estimate %}
+        {# LLM-estimated range. Render the meter. #}
+        {% set lo = estimate.market_min %}
+        {% set hi = estimate.market_max %}
+        {% set median_pct = position_pct(estimate.market_median, lo, hi) %}
+        {% set target_pct = position_pct(estimate.user_target, lo, hi) %}
+
+        <div class="salary-meter">
+            <div class="meter-track">
+                <div class="meter-tick" style="left: {{ median_pct }}%"
+                     title="market median {{ fmt_money(estimate.market_median, estimate.currency) }}"></div>
+                <div class="meter-marker" style="left: {{ target_pct }}%"
+                     title="your target {{ fmt_money(estimate.user_target, estimate.currency) }}">
+                    <span class="meter-marker-label">you · {{ fmt_money(estimate.user_target, estimate.currency) }}</span>
+                </div>
+            </div>
+            <div class="meter-labels">
+                <span class="meter-label-min">{{ fmt_money(lo, estimate.currency) }}</span>
+                <span class="meter-label-median">median {{ fmt_money(estimate.market_median, estimate.currency) }}</span>
+                <span class="meter-label-max">{{ fmt_money(hi, estimate.currency) }}</span>
+            </div>
+        </div>
+
+        <p class="salary-target-source muted">
+            {% if estimate.user_target_source == "profile" %}
+                Your target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is pulled from your profile preferences.
+            {% else %}
+                Your target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is estimated from your work history — set
+                <a href="/profile">preferences.salary_target</a> to override.
+            {% endif %}
+        </p>
+
+        {% if estimate.rationale %}
+            <details class="salary-rationale">
+                <summary>How was this estimated?</summary>
+                <p class="muted">{{ estimate.rationale }}</p>
+                <p class="muted" style="font-size: 13px">
+                    <strong>Caveat:</strong> this is a Claude estimate from training-data patterns
+                    (public postings, mandatory-disclosure states, Levels.fyi crawl, comp surveys).
+                    It is <em>not</em> a query against a live salary database. Use as a sanity-check,
+                    not as a negotiation source. {% if estimate.generated_at %}Generated {{ estimate.generated_at }}.{% endif %}
+                </p>
+            </details>
+        {% endif %}
+
+        <form hx-post="/jobs/{{ job.id }}/estimate-salary"
+              hx-target="#salary-panel"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button"
+              style="margin-top: 8px">
+            <button type="submit" class="btn small">Re-estimate</button>
+            <span class="htmx-indicator muted small">estimating…</span>
+        </form>
+    {% else %}
+        {# No posted salary, no cached estimate yet. Offer to generate one. #}
+        <p class="muted">This posting didn't list a salary.</p>
+        <form hx-post="/jobs/{{ job.id }}/estimate-salary"
+              hx-target="#salary-panel"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button">
+            <button type="submit" class="btn">Estimate range</button>
+            <span class="htmx-indicator muted small">estimating…</span>
+            <span class="muted" style="font-size: 13px; margin-left: 8px">
+                Claude-generated estimate from training-data patterns. Not a live database.
+            </span>
+        </form>
+    {% endif %}
+</section>

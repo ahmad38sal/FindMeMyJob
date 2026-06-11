@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FindMeMyJob — Options</title>
+  <style>
+    body {
+      font: 14px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      max-width: 520px; margin: 40px auto; padding: 0 20px;
+      background: #fff; color: #1c1c1e;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1c1c1e; color: #f2f2f7; }
+      input { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
+      .help { color: #9b9b9f; }
+    }
+    h1 { font-size: 18px; }
+    label { display: block; margin: 14px 0 4px 0; font-weight: 500; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #d2d2d7; border-radius: 6px; font: inherit; }
+    .row { display: flex; gap: 8px; margin-top: 16px; }
+    button {
+      font: inherit; padding: 8px 14px; border: 1px solid #d2d2d7;
+      background: #f2f2f7; border-radius: 6px; cursor: pointer;
+    }
+    button.primary { background: #0a84ff; color: white; border-color: #0a84ff; }
+    .help { color: #6e6e73; font-size: 12px; margin-top: 4px; }
+    .status { margin-top: 12px; font-size: 13px; }
+    .status.ok { color: #1d8a3a; }
+    .status.fail { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>FindMeMyJob — Options</h1>
+
+  <label for="backend_url">Backend URL</label>
+  <input type="url" id="backend_url" placeholder="http://localhost:8000">
+  <div class="help">Where the FindMeMyJob FastAPI app is reachable. Default: <code>http://localhost:8000</code>.</div>
+
+  <label for="token">Bearer token</label>
+  <input type="password" id="token" placeholder="value of FINDMEMYJOB_EXT_TOKEN">
+  <div class="help">Same value you set as <code>FINDMEMYJOB_EXT_TOKEN</code> in your FindMeMyJob <code>.env</code>.</div>
+
+  <div class="row">
+    <button class="primary" id="save">Save</button>
+    <button id="test">Test connection</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

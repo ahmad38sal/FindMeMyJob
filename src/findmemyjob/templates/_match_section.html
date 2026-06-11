@@ -1,0 +1,67 @@
+<section class="panel" id="match-section">
+    <h2>Match</h2>
+    {% if app and app.match_score is not none %}
+        <p><strong>Score:</strong> {{ "%.0f" % app.match_score }}/100
+           {% if app.stretch_required %}<span class="badge stretch">stretch</span>{% endif %}
+        </p>
+        <p>{{ app.match_reasoning }}</p>
+        {% if app.gaps %}
+            <p><strong>Gaps</strong>
+                <span class="muted">— if a gap is something you actually have, type a sentence about how and we'll re-score.</span>
+            </p>
+            <ul class="gaps">
+                {% for gap in app.gaps %}
+                <li class="gap">
+                    <div class="gap-header">
+                        <span class="gap-text">{{ gap }}</span>
+                    </div>
+                    <form class="claim-form"
+                          hx-post="/jobs/{{ job.id }}/claim-gap"
+                          hx-target="#match-section"
+                          hx-swap="outerHTML"
+                          hx-disabled-elt="find button">
+                        <input type="hidden" name="gap" value="{{ gap }}">
+                        <textarea name="evidence" rows="2" required
+                                  placeholder='Where/how did you use {{ gap }}? e.g. "4 yrs maintaining production K8s clusters at Apple"'></textarea>
+                        {% if work_history %}
+                        <details class="claim-advanced">
+                            <summary>Advanced — attach to a specific role</summary>
+                            <p>
+                                <label>Role:
+                                    <select name="role_index">
+                                        <option value="-1">Skills only (no role)</option>
+                                        {% for r in work_history %}
+                                            <option value="{{ loop.index0 }}">{{ r.title }} — {{ r.company }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                            </p>
+                        </details>
+                        {% endif %}
+                        <p class="claim-actions">
+                            <button type="submit" class="btn primary small">I have this — re-score</button>
+                            <span class="htmx-indicator muted small">re-scoring…</span>
+                        </p>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        <form hx-post="/jobs/{{ job.id }}/score"
+              hx-target="#match-section"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button"
+              style="margin-top: 8px">
+            <button type="submit" class="btn small">Re-score</button>
+            <span class="htmx-indicator muted small">scoring…</span>
+        </form>
+    {% else %}
+        <form hx-post="/jobs/{{ job.id }}/score"
+              hx-target="#match-section"
+              hx-swap="outerHTML"
+              hx-disabled-elt="find button">
+            <button type="submit" class="btn">Score against profile</button>
+            <span class="htmx-indicator muted small">scoring…</span>
+        </form>
+    {% endif %}
+</section>

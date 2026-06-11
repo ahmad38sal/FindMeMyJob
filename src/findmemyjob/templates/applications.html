@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Applications{% endblock %}
+{% block content %}
+<h1>Applications</h1>
+
+{% if not rows %}
+    <p class="muted">No applications yet.</p>
+{% else %}
+<table class="jobs">
+    <thead>
+        <tr>
+            <th>Status</th>
+            <th>Job</th>
+            <th>Score</th>
+            <th>Last update</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            <td><span class="badge status">{{ row.app.status }}</span></td>
+            <td>
+                {% if row.job %}
+                    <a href="/jobs/{{ row.job.id }}">{{ row.job.title }} — {{ row.job.company }}</a>
+                {% else %}
+                    <span class="muted">job missing</span>
+                {% endif %}
+            </td>
+            <td>{% if row.app.match_score is not none %}{{ "%.0f" % row.app.match_score }}{% else %}—{% endif %}</td>
+            <td class="muted">{{ row.app.last_status_change.strftime("%Y-%m-%d %H:%M") }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endblock %}
