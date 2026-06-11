@@ -16,10 +16,6 @@ venv/
 env/
 
 # Local data (DB, cached resumes, generated PDFs)
-data/
-*.db
-*.sqlite
-*.sqlite3
 
 # Secrets
 .env

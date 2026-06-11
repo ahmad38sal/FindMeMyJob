@@ -1,0 +1,9 @@
+[
+  {
+    "url": "https://careers.apple.com/api/v1/keep-alive",
+    "status": 200,
+    "body": {
+      "status": "OK"
+    }
+  }
+]
