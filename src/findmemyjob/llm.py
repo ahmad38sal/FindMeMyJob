@@ -33,7 +33,7 @@ from typing import Any, Dict, List
 _PROVIDER_DEFAULTS: Dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-haiku-20241022",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash-lite",
 }
 
 _LLM_PROVIDER: str = os.environ.get("LLM_PROVIDER", "openai").lower()
