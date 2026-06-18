@@ -10,10 +10,11 @@
 <body>
 <header>
     <nav>
+        {% set path = request.url.path if request else '/' %}
         <a href="/" class="brand">FindMeMyJob</a>
-        <a href="/profile">Profile</a>
-        <a href="/jobs">Jobs</a>
-        <a href="/applications">Applications</a>
+        <a href="/profile" {% if path.startswith('/profile') %}class="active"{% endif %}>Profile</a>
+        <a href="/jobs" {% if path.startswith('/jobs') %}class="active"{% endif %}>Jobs</a>
+        <a href="/applications" {% if path.startswith('/applications') %}class="active"{% endif %}>Applications</a>
     </nav>
 </header>
 <main>

@@ -1,0 +1,50 @@
+<div class="app-card" id="app-{{ row.app.id }}">
+    <div class="app-card-head">
+        {% if row.job %}
+        <a href="/jobs/{{ row.job.id }}" class="app-title">{{ row.job.title }}</a>
+        <div class="app-company muted">{{ row.job.company }}{% if row.job.team %} · {{ row.job.team }}{% endif %}</div>
+        {% else %}
+        <span class="app-title muted">job missing</span>
+        {% endif %}
+        {% if row.app.match_score is not none %}
+        <span class="score-pill" title="{{ row.app.match_reasoning }}">{{ "%.0f" % row.app.match_score }}</span>
+        {% endif %}
+    </div>
+
+    <form hx-post="/applications/{{ row.app.id }}/status"
+          hx-target="#app-{{ row.app.id }}" hx-swap="outerHTML"
+          class="status-form">
+        <select name="status" onchange="this.form.requestSubmit()" class="status-select">
+            {% for s in all_statuses %}
+            <option value="{{ s }}" {% if row.app.status.value == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <span class="htmx-indicator spinner small" aria-hidden="true"></span>
+    </form>
+
+    {% if row.app.match_reasoning or row.app.gaps %}
+    <details class="app-detail">
+        <summary>Match detail</summary>
+        {% if row.app.match_reasoning %}<p class="muted small">{{ row.app.match_reasoning }}</p>{% endif %}
+        {% if row.app.gaps %}
+        <div class="small"><strong>Gaps:</strong>
+            {% for g in row.app.gaps %}<span class="badge">{{ g }}</span>{% endfor %}
+        </div>
+        {% endif %}
+    </details>
+    {% endif %}
+
+    <details class="app-detail" {% if row.app.notes %}open{% endif %}>
+        <summary>Notes</summary>
+        <form hx-post="/applications/{{ row.app.id }}/notes"
+              hx-target="#app-{{ row.app.id }}" hx-swap="outerHTML" class="notes-form">
+            <textarea name="notes" rows="3" class="text-area" placeholder="Add a note…">{{ row.app.notes or '' }}</textarea>
+            <button type="submit" class="btn small">Save note</button>
+            <span class="htmx-indicator spinner small" aria-hidden="true"></span>
+        </form>
+    </details>
+
+    <div class="app-card-foot muted small">
+        Updated {{ row.app.last_status_change.strftime("%Y-%m-%d %H:%M") }}
+    </div>
+</div>

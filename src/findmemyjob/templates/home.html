@@ -1,13 +1,23 @@
 {% extends "base.html" %}
 {% block title %}FindMeMyJob — Home{% endblock %}
 {% block content %}
-<h1>FindMeMyJob</h1>
-<p class="muted">Personal job-search and apply tool. Apple internal careers anchor in v1.</p>
+<div class="hero">
+    <h1>FindMeMyJob</h1>
+    <p class="muted">Your personal job-search command center — discover roles, score matches, tailor resumes, and track every application.</p>
+</div>
+
+{% if not profile_set %}
+<section class="panel callout">
+    <h2>Get started</h2>
+    <p>Your profile isn't set up yet. Import your resume or fill in the structured editor so matching and tailoring have something to work with.</p>
+    <a href="/profile" class="btn primary">Set up profile</a>
+</section>
+{% endif %}
 
 <section class="cards">
     <div class="card">
         <h3>Profile</h3>
-        <p>{% if profile_set %}Set up{% else %}<strong>Not set up</strong> — import your resume to start{% endif %}</p>
+        <p>{% if profile_set %}<span class="badge status">Set up</span>{% else %}<strong>Not set up</strong>{% endif %}</p>
         <a href="/profile" class="btn">Open profile</a>
     </div>
 
@@ -19,7 +29,7 @@
 
     <div class="card">
         <h3>Pending review</h3>
-        <p><strong>{{ pending_count }}</strong> awaiting score · <strong>{{ ready_count }}</strong> tailored, ready to apply</p>
+        <p><strong>{{ pending_count }}</strong> awaiting score · <strong>{{ ready_count }}</strong> ready to apply</p>
         <a href="/applications" class="btn">Open tracker</a>
     </div>
 </section>

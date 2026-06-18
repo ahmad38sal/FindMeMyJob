@@ -169,8 +169,9 @@ def list_jobs(
     min_salary: int = 0,
     score_filter: str = "all",
     sort: str = "score_desc",
+    page: int = 1,
 ) -> HTMLResponse:
-    """Job list with filters + sort. URL params drive state."""
+    """Job list with filters + sort + pagination. URL params drive state."""
     rows = session.exec(select(Job)).all()
 
     job_apps: Dict[int, Application] = {}
@@ -228,14 +229,26 @@ def list_jobs(
     all_modes = sorted({j.work_mode for j in rows if j.work_mode})
     all_statuses = sorted({app.status.value for app in job_apps.values() if app})
 
+    # Pagination over the filtered+sorted result set.
+    per_page = 50
+    matched = len(decorated)
+    total_pages = max(1, (matched + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    page_rows = decorated[start:start + per_page]
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "jobs.html",
         {
-            "rows": decorated,
+            "rows": page_rows,
             "total": len(rows),
-            "shown": len(decorated),
+            "shown": matched,
+            "page": page,
+            "total_pages": total_pages,
+            "per_page": per_page,
+            "page_start": start,
             "filters": {
                 "q": q, "source": source, "work_mode": work_mode, "status": status,
                 "min_salary": min_salary, "score_filter": score_filter, "sort": sort,

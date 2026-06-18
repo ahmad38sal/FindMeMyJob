@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Jobs{% endblock %}
 {% block content %}
-<h1>Jobs</h1>
+{# Rebuild the current filter query string (minus page) for pagination links. #}
+{% set qs = [] %}
+{% if filters.q %}{% set _ = qs.append('q=' + filters.q | urlencode) %}{% endif %}
+{% if filters.sort %}{% set _ = qs.append('sort=' + filters.sort) %}{% endif %}
+{% if filters.score_filter %}{% set _ = qs.append('score_filter=' + filters.score_filter) %}{% endif %}
+{% if filters.min_salary %}{% set _ = qs.append('min_salary=' + filters.min_salary | string) %}{% endif %}
+{% for s in filters.source %}{% set _ = qs.append('source=' + s | urlencode) %}{% endfor %}
+{% for m in filters.work_mode %}{% set _ = qs.append('work_mode=' + m | urlencode) %}{% endfor %}
+{% for s in filters.status %}{% set _ = qs.append('status=' + s | urlencode) %}{% endfor %}
+{% set base_qs = qs | join('&') %}
+<div class="page-head">
+    <h1>Jobs</h1>
+    <span class="muted">{{ total }} in queue</span>
+</div>
 
 <section class="panel" style="display:flex; gap:16px; align-items:center; flex-wrap:wrap">
     <form action="/jobs/refresh" method="post" style="display:inline; margin:0">
         <button type="submit" class="btn">Refresh from sources</button>
+        <span class="htmx-indicator spinner" aria-hidden="true"></span>
     </form>
     <form action="/jobs/score-all" method="post" style="display:inline; margin:0">
         <button type="submit" class="btn">Score all</button>
@@ -67,10 +81,23 @@
     </details>
 </form>
 
-<p class="muted" style="margin-top: 12px">Showing {{ shown }} of {{ total }}.</p>
+<p class="muted" style="margin-top: 12px">
+    {% if shown %}Showing {{ page_start + 1 }}–{{ page_start + rows|length }} of {{ shown }} matching ({{ total }} total).{% else %}No matches.{% endif %}
+</p>
 
 {% if not rows %}
-    <p class="muted">No jobs match the current filters.</p>
+    {% if total == 0 %}
+    <section class="panel empty-state">
+        <h2>No jobs yet</h2>
+        <p class="muted">Paste a job URL above, or click <strong>Refresh from sources</strong> to pull listings from your configured sources.</p>
+    </section>
+    {% else %}
+    <section class="panel empty-state">
+        <h2>No jobs match these filters</h2>
+        <p class="muted">Try widening your search or clearing filters.</p>
+        <a href="/jobs" class="btn">Reset filters</a>
+    </section>
+    {% endif %}
 {% else %}
 <table class="jobs">
     <thead>
@@ -113,5 +140,21 @@
     {% endfor %}
     </tbody>
 </table>
+
+{% if total_pages > 1 %}
+<nav class="pager">
+    {% if page > 1 %}
+        <a class="btn small" href="/jobs?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page - 1 }}">← Prev</a>
+    {% else %}
+        <span class="btn small disabled">← Prev</span>
+    {% endif %}
+    <span class="pager-info">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+        <a class="btn small" href="/jobs?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ page + 1 }}">Next →</a>
+    {% else %}
+        <span class="btn small disabled">Next →</span>
+    {% endif %}
+</nav>
+{% endif %}
 {% endif %}
 {% endblock %}

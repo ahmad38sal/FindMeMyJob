@@ -1,23 +1,256 @@
 {% extends "base.html" %}
 {% block title %}Profile{% endblock %}
 {% block content %}
-<h1>Profile</h1>
+<div class="page-head">
+    <h1>Profile</h1>
+    <a href="/profile/master-resume.pdf" class="btn" target="_blank">Download master PDF</a>
+</div>
+
+{% if saved %}
+<div class="toast success" data-toast>Saved.</div>
+{% endif %}
 
 <section class="panel">
     <h2>Import from resume</h2>
-    <p class="muted">Upload a PDF or .docx — Claude parses it into the structured profile below. Review before saving.</p>
-    <form action="/profile/import" method="post" enctype="multipart/form-data">
+    <p class="muted">Upload a PDF or .docx — the AI parses it into the structured profile below. Review before saving.</p>
+    <form action="/profile/import" method="post" enctype="multipart/form-data" class="inline-form">
         <input type="file" name="file" accept=".pdf,.docx,.doc,.txt,.md" required>
-        <button type="submit" class="btn primary">Import</button>
+        <button type="submit" class="btn primary">Import &amp; overwrite</button>
+        <span class="htmx-indicator spinner" aria-hidden="true"></span>
     </form>
-    <p style="margin-top: 12px"><a href="/profile/master-resume.pdf" class="btn" target="_blank">Download master PDF</a></p>
 </section>
 
+<!-- ===================== STRUCTURED EDITOR ===================== -->
+<form action="/profile/save" method="post" id="profile-form">
+
+<section class="panel">
+    <h2>Contact</h2>
+    <div class="field-grid">
+        <label class="field">
+            <span>Full name <em class="req">*</em></span>
+            <input type="text" name="contact_name" value="{{ profile.contact.get('name', '') }}" required>
+        </label>
+        <label class="field">
+            <span>Email</span>
+            <input type="email" name="contact_email" value="{{ profile.contact.get('email') or '' }}">
+        </label>
+        <label class="field">
+            <span>Phone</span>
+            <input type="text" name="contact_phone" value="{{ profile.contact.get('phone') or '' }}">
+        </label>
+        <label class="field">
+            <span>Location</span>
+            <input type="text" name="contact_location" value="{{ profile.contact.get('location') or '' }}">
+        </label>
+        <label class="field">
+            <span>LinkedIn</span>
+            <input type="text" name="contact_linkedin" value="{{ profile.contact.get('linkedin') or '' }}">
+        </label>
+        <label class="field">
+            <span>GitHub</span>
+            <input type="text" name="contact_github" value="{{ profile.contact.get('github') or '' }}">
+        </label>
+        <label class="field">
+            <span>Portfolio</span>
+            <input type="text" name="contact_portfolio" value="{{ profile.contact.get('portfolio') or '' }}">
+        </label>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Summary</h2>
+    <textarea name="summary" rows="4" class="text-area" placeholder="A short professional summary…">{{ profile.summary or '' }}</textarea>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Work history</h2>
+        <button type="button" class="btn small" data-add="work">+ Add role</button>
+    </div>
+    <div class="repeat-list" data-repeat="work">
+        {% for w in profile.work_history %}
+        <fieldset class="repeat-row">
+            <button type="button" class="btn small remove-row" data-remove>Remove</button>
+            <div class="field-grid">
+                <label class="field"><span>Title</span><input type="text" name="work_title" value="{{ w.get('title','') }}"></label>
+                <label class="field"><span>Company</span><input type="text" name="work_company" value="{{ w.get('company','') }}"></label>
+                <label class="field"><span>Location</span><input type="text" name="work_location" value="{{ w.get('location') or '' }}"></label>
+                <label class="field"><span>Start (YYYY-MM-DD)</span><input type="text" name="work_start" value="{{ w.get('start') or '' }}" placeholder="2021-01"></label>
+                <label class="field"><span>End (blank = current)</span><input type="text" name="work_end" value="{{ w.get('end') or '' }}" placeholder="2023-06"></label>
+                <label class="field"><span>Skills (comma-separated)</span><input type="text" name="work_skills" value="{{ w.get('skills', []) | join(', ') }}"></label>
+            </div>
+            <label class="field full"><span>Bullets (one per line)</span>
+                <textarea name="work_bullets" rows="4" class="text-area">{{ w.get('bullets', []) | join('\n') }}</textarea>
+            </label>
+        </fieldset>
+        {% endfor %}
+    </div>
+    {% if not profile.work_history %}<p class="muted empty-hint" data-empty="work">No roles yet — click “Add role”.</p>{% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Education</h2>
+        <button type="button" class="btn small" data-add="edu">+ Add education</button>
+    </div>
+    <div class="repeat-list" data-repeat="edu">
+        {% for e in profile.education %}
+        <fieldset class="repeat-row">
+            <button type="button" class="btn small remove-row" data-remove>Remove</button>
+            <div class="field-grid">
+                <label class="field"><span>School</span><input type="text" name="edu_school" value="{{ e.get('school','') }}"></label>
+                <label class="field"><span>Degree</span><input type="text" name="edu_degree" value="{{ e.get('degree','') }}"></label>
+                <label class="field"><span>Field</span><input type="text" name="edu_field" value="{{ e.get('field') or '' }}"></label>
+                <label class="field"><span>Start</span><input type="text" name="edu_start" value="{{ e.get('start') or '' }}" placeholder="2016"></label>
+                <label class="field"><span>End</span><input type="text" name="edu_end" value="{{ e.get('end') or '' }}" placeholder="2020"></label>
+                <label class="field"><span>GPA</span><input type="text" name="edu_gpa" value="{{ e.get('gpa') if e.get('gpa') is not none else '' }}"></label>
+            </div>
+        </fieldset>
+        {% endfor %}
+    </div>
+    {% if not profile.education %}<p class="muted empty-hint" data-empty="edu">No education yet.</p>{% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Skills</h2>
+        <button type="button" class="btn small" data-add="skill">+ Add skill</button>
+    </div>
+    <div class="repeat-list" data-repeat="skill">
+        {% for s in profile.skills %}
+        <fieldset class="repeat-row">
+            <button type="button" class="btn small remove-row" data-remove>Remove</button>
+            <div class="field-grid">
+                <label class="field"><span>Name</span><input type="text" name="skill_name" value="{{ s.get('name','') }}"></label>
+                <label class="field"><span>Category</span><input type="text" name="skill_category" value="{{ s.get('category') or '' }}"></label>
+                <label class="field"><span>Years</span><input type="text" name="skill_years" value="{{ s.get('years') if s.get('years') is not none else '' }}"></label>
+            </div>
+            <label class="field full"><span>Evidence (where/how you used it)</span>
+                <textarea name="skill_evidence" rows="2" class="text-area">{{ s.get('evidence') or '' }}</textarea>
+            </label>
+        </fieldset>
+        {% endfor %}
+    </div>
+    {% if not profile.skills %}<p class="muted empty-hint" data-empty="skill">No skills yet.</p>{% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Certifications</h2>
+        <button type="button" class="btn small" data-add="cert">+ Add certification</button>
+    </div>
+    <div class="repeat-list" data-repeat="cert">
+        {% for c in profile.certifications %}
+        <fieldset class="repeat-row">
+            <button type="button" class="btn small remove-row" data-remove>Remove</button>
+            <div class="field-grid">
+                <label class="field"><span>Name</span><input type="text" name="cert_name" value="{{ c.get('name','') }}"></label>
+                <label class="field"><span>Issuer</span><input type="text" name="cert_issuer" value="{{ c.get('issuer') or '' }}"></label>
+                <label class="field"><span>Earned</span><input type="text" name="cert_earned" value="{{ c.get('date_earned') or '' }}" placeholder="2022"></label>
+                <label class="field"><span>Expires</span><input type="text" name="cert_expires" value="{{ c.get('expires') or '' }}"></label>
+            </div>
+        </fieldset>
+        {% endfor %}
+    </div>
+    {% if not profile.certifications %}<p class="muted empty-hint" data-empty="cert">No certifications yet.</p>{% endif %}
+</section>
+
+<section class="panel">
+    <h2>Preferences</h2>
+    {% set p = profile.preferences or {} %}
+    <div class="field-grid">
+        <label class="field"><span>Salary min</span><input type="text" name="pref_salary_min" value="{{ p.get('salary_min') if p.get('salary_min') is not none else '' }}"></label>
+        <label class="field"><span>Salary target</span><input type="text" name="pref_salary_target" value="{{ p.get('salary_target') if p.get('salary_target') is not none else '' }}"></label>
+        <label class="field"><span>Currency</span><input type="text" name="pref_currency" value="{{ p.get('currency') or 'USD' }}"></label>
+        <label class="field"><span>Seniority (comma-separated)</span><input type="text" name="pref_seniority" value="{{ p.get('seniority_levels', []) | join(', ') }}"></label>
+        <label class="field"><span>Industries (comma-separated)</span><input type="text" name="pref_industries" value="{{ p.get('industries', []) | join(', ') }}"></label>
+    </div>
+    <div class="field-grid">
+        <label class="field full"><span>Preferred locations (one per line)</span>
+            <textarea name="pref_locations" rows="3" class="text-area">{{ p.get('locations', []) | join('\n') }}</textarea>
+        </label>
+        <label class="field full"><span>Exclude companies (one per line)</span>
+            <textarea name="pref_exclude" rows="3" class="text-area">{{ p.get('exclude_companies', []) | join('\n') }}</textarea>
+        </label>
+    </div>
+    <fieldset class="checks">
+        <legend>Work modes</legend>
+        {% set modes = p.get('work_modes', []) %}
+        <label><input type="checkbox" name="pref_work_modes" value="remote" {% if 'remote' in modes %}checked{% endif %}> Remote</label>
+        <label><input type="checkbox" name="pref_work_modes" value="hybrid" {% if 'hybrid' in modes %}checked{% endif %}> Hybrid</label>
+        <label><input type="checkbox" name="pref_work_modes" value="onsite" {% if 'onsite' in modes %}checked{% endif %}> Onsite</label>
+    </fieldset>
+    <label class="field slider-field">
+        <span>Stretch tolerance: <strong id="stretch-val">{{ p.get('stretch_slider', 30) }}</strong></span>
+        <input type="range" name="pref_stretch" min="0" max="100" value="{{ p.get('stretch_slider', 30) }}"
+               oninput="document.getElementById('stretch-val').textContent = this.value">
+        <span class="muted slider-legend">0 = only solid matches · 100 = include big stretches I'd grow into</span>
+    </label>
+</section>
+
+<div class="sticky-save">
+    <button type="submit" class="btn primary">Save profile</button>
+    <span class="htmx-indicator spinner" aria-hidden="true"></span>
+</div>
+</form>
+
+<!-- Hidden templates for new repeatable rows. -->
+<template id="tpl-work">
+    <fieldset class="repeat-row">
+        <button type="button" class="btn small remove-row" data-remove>Remove</button>
+        <div class="field-grid">
+            <label class="field"><span>Title</span><input type="text" name="work_title"></label>
+            <label class="field"><span>Company</span><input type="text" name="work_company"></label>
+            <label class="field"><span>Location</span><input type="text" name="work_location"></label>
+            <label class="field"><span>Start (YYYY-MM-DD)</span><input type="text" name="work_start" placeholder="2021-01"></label>
+            <label class="field"><span>End (blank = current)</span><input type="text" name="work_end" placeholder="2023-06"></label>
+            <label class="field"><span>Skills (comma-separated)</span><input type="text" name="work_skills"></label>
+        </div>
+        <label class="field full"><span>Bullets (one per line)</span><textarea name="work_bullets" rows="4" class="text-area"></textarea></label>
+    </fieldset>
+</template>
+<template id="tpl-edu">
+    <fieldset class="repeat-row">
+        <button type="button" class="btn small remove-row" data-remove>Remove</button>
+        <div class="field-grid">
+            <label class="field"><span>School</span><input type="text" name="edu_school"></label>
+            <label class="field"><span>Degree</span><input type="text" name="edu_degree"></label>
+            <label class="field"><span>Field</span><input type="text" name="edu_field"></label>
+            <label class="field"><span>Start</span><input type="text" name="edu_start"></label>
+            <label class="field"><span>End</span><input type="text" name="edu_end"></label>
+            <label class="field"><span>GPA</span><input type="text" name="edu_gpa"></label>
+        </div>
+    </fieldset>
+</template>
+<template id="tpl-skill">
+    <fieldset class="repeat-row">
+        <button type="button" class="btn small remove-row" data-remove>Remove</button>
+        <div class="field-grid">
+            <label class="field"><span>Name</span><input type="text" name="skill_name"></label>
+            <label class="field"><span>Category</span><input type="text" name="skill_category"></label>
+            <label class="field"><span>Years</span><input type="text" name="skill_years"></label>
+        </div>
+        <label class="field full"><span>Evidence (where/how you used it)</span><textarea name="skill_evidence" rows="2" class="text-area"></textarea></label>
+    </fieldset>
+</template>
+<template id="tpl-cert">
+    <fieldset class="repeat-row">
+        <button type="button" class="btn small remove-row" data-remove>Remove</button>
+        <div class="field-grid">
+            <label class="field"><span>Name</span><input type="text" name="cert_name"></label>
+            <label class="field"><span>Issuer</span><input type="text" name="cert_issuer"></label>
+            <label class="field"><span>Earned</span><input type="text" name="cert_earned"></label>
+            <label class="field"><span>Expires</span><input type="text" name="cert_expires"></label>
+        </div>
+    </fieldset>
+</template>
+
+<!-- ===================== SOURCE CONFIG ===================== -->
 <section class="panel">
     <h2>Claimed skills <span class="muted">(saved across all jobs)</span></h2>
     <p class="muted">
         When you click "I have this" on a job's gap and add context, it lands here.
-        Future scoring and tailoring use this evidence — not just for the job you claimed it on.
+        Future scoring and tailoring use this evidence.
     </p>
     {% if claimed_skills %}
         <ul class="claimed-skills">
@@ -40,134 +273,127 @@
     {% endif %}
 </section>
 
-<section class="panel">
-    <h2>Apple internal — session upload</h2>
-    <p class="muted">
-        Upload a Playwright storage-state JSON (<code>apple_session.json</code>) exported
-        after logging in to AppleConnect in a local headed browser.
-        Once uploaded, the Apple internal source can scrape headlessly on Railway.
-    </p>
-    <form action="/profile/apple-session/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".json" required>
-        <button type="submit" class="btn">Upload session</button>
-    </form>
-</section>
+<details class="panel">
+    <summary><h2 style="display:inline">Job source configuration</h2></summary>
 
-<section class="panel">
-    <h2>Apple internal — search filters</h2>
-    <p class="muted">
-        Drives <code>POST /jobs/refresh</code>. Queries are auto-generated from your profile;
-        widen to include adjacent areas, narrow to stick to closest matches.
-        Uncheck queries you don't want, edit them, or add custom ones.
-    </p>
+    <section style="margin-top:16px">
+        <h3>Apple internal — session upload <span class="badge">optional</span></h3>
+        <p class="muted">
+            Upload a Playwright storage-state JSON (<code>apple_session.json</code>) exported
+            after logging in to AppleConnect locally. Optional and disabled by default.
+        </p>
+        <form action="/profile/apple-session/upload" method="post" enctype="multipart/form-data" class="inline-form">
+            <input type="file" name="file" accept=".json" required>
+            <button type="submit" class="btn">Upload session</button>
+        </form>
+    </section>
 
-    <form action="/profile/search/regenerate" method="post" style="margin-bottom: 16px">
-        <label>Width:
-            <select name="width">
-                <option value="narrow"  {% if search_width == "narrow"  %}selected{% endif %}>Narrow (3 queries)</option>
-                <option value="medium"  {% if search_width == "medium"  %}selected{% endif %}>Medium (5 queries)</option>
-                <option value="wide"    {% if search_width == "wide"    %}selected{% endif %}>Wide (10 queries)</option>
-            </select>
-        </label>
-        <button type="submit" class="btn">Regenerate from profile</button>
-    </form>
-
-    <form action="/profile/search/save" method="post">
-        {% if search_queries %}
-            <p><strong>Active queries</strong> — uncheck to disable, edit text inline</p>
-            <ul class="search-queries">
-                {% for q in search_queries %}
-                    <li>
-                        <input type="checkbox" name="active_idx" value="{{ loop.index0 }}" checked>
-                        <input type="text" name="query" value="{{ q }}" class="query-input">
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="muted">No queries yet — pick a width above and click "Regenerate from profile".</p>
-        {% endif %}
-
-        <p>
-            <label>Add custom query:
-                <input type="text" name="custom_query" placeholder="e.g. iOS engineer infrastructure" class="query-input">
-            </label>
+    <section style="margin-top:24px">
+        <h3>Apple internal — search filters</h3>
+        <p class="muted">
+            Drives <code>POST /jobs/refresh</code>. Queries are auto-generated from your profile;
+            uncheck queries you don't want, edit them, or add custom ones.
         </p>
 
-        <p>
-            <label style="display:block; margin-bottom:4px"><strong>Custom search URL</strong> (overrides the queries above when set)</label>
-            <input type="url" name="custom_url" value="{{ search_url }}"
-                   placeholder="https://careers.apple.com/en-us/search?team=SFTWR&search=ml"
-                   class="query-input" style="width: 100%; max-width: 700px">
-            <span class="muted" style="display:block; font-size:13px; margin-top:4px">
-                Tip: open careers.apple.com, apply your filters, copy the URL from the address bar, paste here.
-            </span>
-        </p>
-
-        <p>
-            <label>Max pages per query:
-                <input type="number" name="max_pages" min="1" max="20" value="{{ search_max_pages }}" style="width: 4em">
+        <form action="/profile/search/regenerate" method="post" style="margin-bottom: 16px">
+            <label>Width:
+                <select name="width">
+                    <option value="narrow" {% if search_width == "narrow" %}selected{% endif %}>Narrow (3 queries)</option>
+                    <option value="medium" {% if search_width == "medium" %}selected{% endif %}>Medium (5 queries)</option>
+                    <option value="wide"   {% if search_width == "wide"   %}selected{% endif %}>Wide (10 queries)</option>
+                </select>
             </label>
-            <span class="muted">(20 jobs per page; 3 = up to 60 jobs per query)</span>
+            <button type="submit" class="btn">Regenerate from profile</button>
+        </form>
+
+        <form action="/profile/search/save" method="post">
+            {% if search_queries %}
+                <p><strong>Active queries</strong> — uncheck to disable, edit text inline</p>
+                <ul class="search-queries">
+                    {% for q in search_queries %}
+                        <li>
+                            <input type="checkbox" name="active_idx" value="{{ loop.index0 }}" checked>
+                            <input type="text" name="query" value="{{ q }}" class="query-input">
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="muted">No queries yet — pick a width above and click "Regenerate from profile".</p>
+            {% endif %}
+
+            <p><label>Add custom query:
+                <input type="text" name="custom_query" placeholder="e.g. iOS engineer infrastructure" class="query-input"></label></p>
+
+            <p>
+                <label style="display:block; margin-bottom:4px"><strong>Custom search URL</strong> (overrides queries when set)</label>
+                <input type="url" name="custom_url" value="{{ search_url }}"
+                       placeholder="https://careers.apple.com/en-us/search?team=SFTWR&search=ml"
+                       class="query-input" style="width: 100%; max-width: 700px">
+            </p>
+            <p><label>Max pages per query:
+                <input type="number" name="max_pages" min="1" max="20" value="{{ search_max_pages }}" style="width: 4em"></label>
+                <span class="muted">(20 jobs per page)</span></p>
+
+            <input type="hidden" name="width" value="{{ search_width }}">
+            <button type="submit" class="btn primary">Save filters</button>
+        </form>
+    </section>
+
+    <section style="margin-top:24px">
+        <h3>External companies (Greenhouse / Lever)</h3>
+        <p class="muted">
+            One company per line, format <code>source:slug</code> — e.g.
+            <code>greenhouse:stripe</code>, <code>lever:cresta</code>.
         </p>
+        <form action="/profile/external/save" method="post">
+            <textarea name="external_companies" rows="6" spellcheck="false"
+                      placeholder="greenhouse:stripe&#10;greenhouse:anthropic&#10;lever:cresta">{{ external_companies }}</textarea>
 
-        <input type="hidden" name="width" value="{{ search_width }}">
-        <button type="submit" class="btn primary">Save filters</button>
-    </form>
-</section>
+            <h4 style="margin-top:18px">Free aggregators</h4>
+            <p><label><input type="checkbox" name="use_bundled_directory" value="1" {% if use_bundled_directory %}checked{% endif %}>
+                <strong>Bundled directory</strong> — ~70 popular tech companies on Greenhouse/Lever</label></p>
+            <p><label><input type="checkbox" name="enable_remoteok" value="1" {% if enable_remoteok %}checked{% endif %}>
+                <strong>RemoteOK</strong> — public feed of remote-only roles</label></p>
+            <p><label><input type="checkbox" name="enable_hn_whoishiring" value="1" {% if enable_hn_whoishiring %}checked{% endif %}>
+                <strong>HN "Who is hiring?"</strong> — latest monthly thread</label>
+                <label style="margin-left: 16px">limit:
+                    <input type="number" name="hn_limit" min="10" max="200" value="{{ hn_limit }}" style="width: 4em"></label></p>
 
-<section class="panel">
-    <h2>External companies (Greenhouse / Lever)</h2>
-    <p class="muted">
-        One company per line, format <code>source:slug</code> — e.g.
-        <code>greenhouse:stripe</code>, <code>lever:cresta</code>. To find a slug,
-        open a company's careers page that uses Greenhouse or Lever; the slug is
-        the path segment after <code>boards.greenhouse.io/</code> or <code>jobs.lever.co/</code>.
-    </p>
-    <form action="/profile/external/save" method="post">
-        <textarea name="external_companies" rows="6" spellcheck="false"
-                  placeholder="greenhouse:stripe&#10;greenhouse:anthropic&#10;lever:cresta">{{ external_companies }}</textarea>
+            <button type="submit" class="btn primary">Save companies + sources</button>
+        </form>
+    </section>
+</details>
 
-        <h3 style="margin-top:18px">Free aggregators</h3>
-        <p class="muted">Toggle on to widen discovery without naming companies. All filter against your active queries above.</p>
-        <p>
-            <label>
-                <input type="checkbox" name="use_bundled_directory" value="1" {% if use_bundled_directory %}checked{% endif %}>
-                <strong>Bundled directory</strong> — ~70 popular tech companies on Greenhouse/Lever (Stripe, Anthropic, Notion, Figma, …)
-            </label>
-        </p>
-        <p>
-            <label>
-                <input type="checkbox" name="enable_remoteok" value="1" {% if enable_remoteok %}checked{% endif %}>
-                <strong>RemoteOK</strong> — public feed of remote-only roles (no auth)
-            </label>
-        </p>
-        <p>
-            <label>
-                <input type="checkbox" name="enable_hn_whoishiring" value="1" {% if enable_hn_whoishiring %}checked{% endif %}>
-                <strong>HN "Who is hiring?"</strong> — latest monthly thread, LLM-extracted
-            </label>
-            <label style="margin-left: 16px">limit:
-                <input type="number" name="hn_limit" min="10" max="200" value="{{ hn_limit }}" style="width: 4em">
-            </label>
-            <span class="muted" style="font-size:13px">(each entry is one LLM call)</span>
-        </p>
-
-        <button type="submit" class="btn primary">Save companies + sources</button>
-    </form>
-</section>
-
-<section class="panel">
-    <h2>Structured profile (raw JSON)</h2>
-    <p class="muted">Edit directly. Saved on submit. v1 ships with raw-JSON edit; a richer editor is post-v1.</p>
-    <form action="/profile/save-json" method="post">
-        <textarea name="profile_json" rows="30" spellcheck="false">{{ profile_json }}</textarea>
-        <button type="submit" class="btn primary">Save</button>
-    </form>
-</section>
-
-<style>
-    ul.search-queries { list-style: none; padding: 0; }
-    ul.search-queries li { margin: 6px 0; }
-    .query-input { width: 24em; padding: 4px 6px; font: inherit; border: 1px solid var(--border); border-radius: 4px; }
-</style>
+<script>
+(function () {
+    // Repeatable rows: clone the matching <template> into the list.
+    document.querySelectorAll('[data-add]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var key = btn.getAttribute('data-add');
+            var list = document.querySelector('[data-repeat="' + key + '"]');
+            var tpl = document.getElementById('tpl-' + key);
+            if (!list || !tpl) return;
+            var node = tpl.content.cloneNode(true);
+            list.appendChild(node);
+            var hint = document.querySelector('[data-empty="' + key + '"]');
+            if (hint) hint.remove();
+            var rows = list.querySelectorAll('.repeat-row');
+            var last = rows[rows.length - 1];
+            var first = last && last.querySelector('input, textarea');
+            if (first) first.focus();
+        });
+    });
+    // Remove row (event delegation).
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-remove]');
+        if (!btn) return;
+        var row = btn.closest('.repeat-row');
+        if (row) row.remove();
+    });
+    // Auto-dismiss toast.
+    document.querySelectorAll('[data-toast]').forEach(function (t) {
+        setTimeout(function () { t.classList.add('hide'); }, 2600);
+    });
+})();
+</script>
 {% endblock %}

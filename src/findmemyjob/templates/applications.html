@@ -1,36 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Applications{% endblock %}
 {% block content %}
-<h1>Applications</h1>
+<div class="page-head">
+    <h1>Applications</h1>
+    <span class="muted">{{ total }} tracked</span>
+</div>
 
-{% if not rows %}
-    <p class="muted">No applications yet.</p>
+{% if total == 0 %}
+<section class="panel empty-state">
+    <h2>No applications yet</h2>
+    <p class="muted">Score and tailor jobs to start tracking them here. Tailoring a role moves it to <strong>ready</strong>; marking it applied moves it to <strong>submitted</strong>.</p>
+    <a href="/jobs" class="btn primary">Browse jobs</a>
+</section>
 {% else %}
-<table class="jobs">
-    <thead>
-        <tr>
-            <th>Status</th>
-            <th>Job</th>
-            <th>Score</th>
-            <th>Last update</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for row in rows %}
-        <tr>
-            <td><span class="badge status">{{ row.app.status }}</span></td>
-            <td>
-                {% if row.job %}
-                    <a href="/jobs/{{ row.job.id }}">{{ row.job.title }} — {{ row.job.company }}</a>
-                {% else %}
-                    <span class="muted">job missing</span>
-                {% endif %}
-            </td>
-            <td>{% if row.app.match_score is not none %}{{ "%.0f" % row.app.match_score }}{% else %}—{% endif %}</td>
-            <td class="muted">{{ row.app.last_status_change.strftime("%Y-%m-%d %H:%M") }}</td>
-        </tr>
+<div class="board">
+    {% for col in columns %}
+    {% if col.rows %}
+    <div class="board-col">
+        <div class="board-col-head">
+            <span class="status-dot status-{{ col.status.value }}"></span>
+            <span class="board-col-title">{{ col.status.value }}</span>
+            <span class="board-col-count">{{ col.rows | length }}</span>
+        </div>
+        <div class="board-col-body">
+            {% for row in col.rows %}
+                {% include "_application_card.html" %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
     {% endfor %}
-    </tbody>
-</table>
+</div>
 {% endif %}
 {% endblock %}
