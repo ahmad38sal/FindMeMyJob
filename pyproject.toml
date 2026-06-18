@@ -18,12 +18,12 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "lxml>=6.1.1",
     "openai>=1.0",
+    "google-genai>=0.3",
     "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.39"]
-gemini = ["google-genai"]
 
 [build-system]
 requires = ["hatchling"]
