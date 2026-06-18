@@ -1,1 +1,1 @@
-web: uvicorn findmemyjob.main:app --host 0.0.0.0 --port $PORT
+web: ./start.sh

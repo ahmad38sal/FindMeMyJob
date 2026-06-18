@@ -26,6 +26,9 @@ RUN uv run playwright install --with-deps chromium
 # Copy the rest of the project
 COPY . .
 
+# Make the entrypoint executable
+RUN chmod +x /app/start.sh
+
 # Railway sets PORT dynamically; default to 8000 for local docker runs
 ENV PORT=8000
 
@@ -34,4 +37,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE $PORT
 
-CMD uvicorn findmemyjob.main:app --host 0.0.0.0 --port $PORT
+# Use the entrypoint script so $PORT is always expanded, even if a platform
+# invokes the start command in exec form.
+CMD ["/app/start.sh"]
