@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
@@ -20,9 +21,17 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from findmemyjob.llm import DEFAULT_TAILOR_MODEL, llm
+from findmemyjob.llm import DEFAULT_MATCH_MODEL, DEFAULT_TAILOR_MODEL, llm
 from findmemyjob.matching import _strip_code_fence
 from findmemyjob.models import Job
+
+
+# Extraction is a simple structured-output task — use the cheaper, more stable
+# "match" model (lite) as the primary, and fall back to the heavier tailor model
+# only if the lite one returns unparseable output. The lite model also tends to
+# be far less likely to hit "model overloaded" (503) than the flagship.
+_PRIMARY_EXTRACT_MODEL = DEFAULT_MATCH_MODEL
+_FALLBACK_EXTRACT_MODEL = DEFAULT_TAILOR_MODEL
 
 
 _EXTRACT_INSTRUCTIONS = """\
@@ -56,20 +65,123 @@ def _clean_html(html: str) -> str:
     return text[:30_000]  # cap so we don't blow the LLM context window
 
 
+def _extract_json(raw: str) -> Dict[str, Any]:
+    """Parse the model's reply into a dict.
+
+    Gemini (especially thinking-enabled flagship models) sometimes emits a short
+    reasoning preamble or trailing prose around the JSON. We first try a clean
+    parse, then fall back to grabbing the outermost {...} block.
+    """
+    cleaned = _strip_code_fence(raw).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    raise json.JSONDecodeError("No JSON object found in model output", cleaned, 0)
+
+
+def _is_transient_llm_error(exc: Exception) -> bool:
+    """True for model-overloaded / rate-limit style errors worth retrying."""
+    msg = str(exc).lower()
+    name = type(exc).__name__.lower()
+    return (
+        "503" in msg
+        or "unavailable" in msg
+        or "overloaded" in msg
+        or "high demand" in msg
+        or "429" in msg
+        or "resource_exhausted" in msg
+        or "rate limit" in msg
+        or "servererror" in name
+    )
+
+
+def _llm_extract(url: str, text: str) -> Dict[str, Any]:
+    """Call the LLM to extract a job record, with retry/backoff and a model
+    fallback. Raises RuntimeError with a user-friendly message on failure."""
+    user_msg = f"URL: {url}\n\nPAGE TEXT:\n{text}\n\nReturn JSON now."
+    models = [_PRIMARY_EXTRACT_MODEL]
+    if _FALLBACK_EXTRACT_MODEL != _PRIMARY_EXTRACT_MODEL:
+        models.append(_FALLBACK_EXTRACT_MODEL)
+    last_exc: Optional[Exception] = None
+
+    for model in models:
+        for attempt in range(3):
+            try:
+                raw = llm.complete(
+                    system=[{"type": "text", "text": _EXTRACT_INSTRUCTIONS}],
+                    messages=[{"role": "user", "content": user_msg}],
+                    model=model,
+                    max_tokens=4096,
+                    temperature=0.1,
+                )
+                return _extract_json(raw)
+            except json.JSONDecodeError as exc:
+                last_exc = exc
+                if attempt == 0:
+                    continue
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if _is_transient_llm_error(exc) and attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                break
+
+    if last_exc is not None and _is_transient_llm_error(last_exc):
+        raise RuntimeError(
+            "The AI model is busy right now (high demand). Please wait a moment "
+            "and try adding this job again."
+        ) from last_exc
+    if isinstance(last_exc, json.JSONDecodeError):
+        raise RuntimeError(
+            "Couldn't read the job details from this page. Try pasting the job "
+            "description manually instead."
+        ) from last_exc
+    raise RuntimeError(
+        f"Couldn't extract this job via AI: {last_exc}"
+    ) from last_exc
+
+
 def fetch_one_by_url(url: str) -> Job:
     parsed = urlparse(url)
     if not parsed.scheme.startswith("http"):
         raise ValueError(f"Not an HTTP URL: {url}")
 
-    resp = httpx.get(
-        url, timeout=30, follow_redirects=True,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                          "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
-    resp.raise_for_status()
+    try:
+        resp = httpx.get(
+            url, timeout=30, follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        if code in (401, 403):
+            raise RuntimeError(
+                "This page requires login or blocks automated access. Paste the "
+                "job description manually instead."
+            ) from exc
+        if code == 404:
+            raise RuntimeError(
+                "That job URL returned 404 (Not Found). The posting may have been "
+                "removed, or the link is wrong."
+            ) from exc
+        raise RuntimeError(
+            f"Couldn't load that URL (HTTP {code}). Check the link and try again."
+        ) from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError(
+            f"Couldn't reach that URL ({type(exc).__name__}). Check the link and "
+            "your connection, then try again."
+        ) from exc
+
     text = _clean_html(resp.text)
     if not text.strip():
         raise RuntimeError(
@@ -77,14 +189,7 @@ def fetch_one_by_url(url: str) -> Job:
             "require login. Paste the job description manually instead."
         )
 
-    raw = llm.complete(
-        system=[{"type": "text", "text": _EXTRACT_INSTRUCTIONS}],
-        messages=[{"role": "user", "content": f"URL: {url}\n\nPAGE TEXT:\n{text}\n\nReturn JSON now."}],
-        model=DEFAULT_TAILOR_MODEL,
-        max_tokens=4096,
-        temperature=0.1,
-    )
-    data: Dict[str, Any] = json.loads(_strip_code_fence(raw))
+    data: Dict[str, Any] = _llm_extract(url, text)
 
     host = parsed.netloc.lower()
     return Job(

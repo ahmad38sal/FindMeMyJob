@@ -346,10 +346,21 @@ def add_by_url(
         raise HTTPException(400, "Empty URL")
     try:
         job = _fetch_one_by_url(url)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:
         raise HTTPException(503, str(e))
+    except Exception as e:  # noqa: BLE001 - last-resort guard
+        # Never leak a raw 500 to the user for an add-by-url attempt. Most
+        # unexpected failures here are upstream (model busy, page quirks).
+        print(f"[add-by-url] unexpected error for {url!r}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Couldn't add this job right now due to an unexpected error. "
+            "Please try again in a moment, or paste the description manually.",
+        )
 
     existing = session.exec(
         select(Job).where(Job.source == job.source).where(Job.source_id == job.source_id)
