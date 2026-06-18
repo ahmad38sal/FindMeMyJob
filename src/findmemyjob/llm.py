@@ -264,14 +264,35 @@ def _gemini_complete(
         else:
             prompt_parts.append(str(content))
 
-    response = client.models.generate_content(
-        model=model,
-        contents="\n\n".join(prompt_parts),
-        config=genai.types.GenerateContentConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-        ),
-    )
+    # Gemini "flash" models count internal *thinking* tokens against
+    # max_output_tokens. For our structured-JSON tasks that can starve the
+    # actual answer and truncate the JSON mid-string. Disable thinking so the
+    # full token budget goes to the response. Older models that don't support
+    # ThinkingConfig are handled by the fallback config below.
+    cfg_kwargs: Dict[str, Any] = {
+        "max_output_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    try:
+        cfg = genai.types.GenerateContentConfig(
+            thinking_config=genai.types.ThinkingConfig(thinking_budget=0),
+            **cfg_kwargs,
+        )
+    except Exception:  # noqa: BLE001 - SDK/model without ThinkingConfig support
+        cfg = genai.types.GenerateContentConfig(**cfg_kwargs)
+
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents="\n\n".join(prompt_parts),
+            config=cfg,
+        )
+    except Exception:  # noqa: BLE001 - retry once w/o thinking_config if rejected
+        response = client.models.generate_content(
+            model=model,
+            contents="\n\n".join(prompt_parts),
+            config=genai.types.GenerateContentConfig(**cfg_kwargs),
+        )
     return response.text or ""
 
 

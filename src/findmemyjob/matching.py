@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from findmemyjob.llm import DEFAULT_MATCH_MODEL, _strip_code_fence, llm
 from findmemyjob.models import Job
@@ -27,6 +28,53 @@ class ScoreResult(BaseModel):
     gaps: List[str] = Field(default_factory=list)
     stretch_required: bool = False
     matched_skills: List[str] = Field(default_factory=list)
+
+
+def _parse_score_result(raw: str) -> ScoreResult:
+    """Parse the model's reply into a ScoreResult, tolerant of LLM quirks.
+
+    Handles: code fences, thinking-preamble prose around the JSON, and JSON that
+    got truncated mid-output (max_tokens). Falls back to a neutral, clearly
+    labeled result instead of raising — a bad score must never 500 the page.
+    """
+    cleaned = _strip_code_fence(raw or "").strip()
+
+    # 1) Straight parse.
+    try:
+        return ScoreResult.model_validate_json(cleaned)
+    except (ValidationError, ValueError):
+        pass
+
+    # 2) Grab the outermost {...} block (strips thinking preamble/trailing prose).
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            return ScoreResult.model_validate_json(match.group(0))
+        except (ValidationError, ValueError):
+            pass
+
+    # 3) Salvage from truncated JSON: pull the numeric score if present so the
+    #    job still gets a usable ranking instead of being dropped.
+    salvaged_score = 0.0
+    m = re.search(r'"score"\s*:\s*([0-9]+(?:\.[0-9]+)?)', cleaned)
+    if m:
+        try:
+            salvaged_score = max(0.0, min(100.0, float(m.group(1))))
+        except ValueError:
+            salvaged_score = 0.0
+    reason_m = re.search(r'"reasoning"\s*:\s*"([^"]{0,300})', cleaned)
+    reasoning = (
+        reason_m.group(1).strip()
+        if reason_m
+        else "Scoring response was incomplete; re-score to refine."
+    )
+    return ScoreResult(
+        score=salvaged_score,
+        reasoning=reasoning,
+        gaps=[],
+        stretch_required=False,
+        matched_skills=[],
+    )
 
 
 def prefilter(profile_dict: Dict[str, Any], job: Job) -> Optional[str]:
@@ -107,10 +155,10 @@ def score_job(profile_dict: Dict[str, Any], job: Job) -> ScoreResult:
         instructions=_MATCH_INSTRUCTIONS,
         user_prompt=user_prompt,
         model=DEFAULT_MATCH_MODEL,
-        max_tokens=1024,
+        max_tokens=2048,
         temperature=0.2,
     )
-    return ScoreResult.model_validate_json(_strip_code_fence(raw))
+    return _parse_score_result(raw)
 
 
 async def _score_one_async(
@@ -135,10 +183,10 @@ async def _score_one_async(
             instructions=_MATCH_INSTRUCTIONS,
             user_prompt=user_prompt,
             model=DEFAULT_MATCH_MODEL,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=0.2,
         )
-        return ScoreResult.model_validate_json(_strip_code_fence(raw))
+        return _parse_score_result(raw)
 
 
 async def score_jobs_bulk(

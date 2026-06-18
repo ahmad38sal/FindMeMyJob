@@ -411,7 +411,16 @@ def score(
     app = session.exec(select(Application).where(Application.job_id == job_id)).first()
     if app is None:
         app = Application(job_id=job_id)
-    _rescore_app(profile_dict, job, app)
+    try:
+        _rescore_app(profile_dict, job, app)
+    except Exception as e:  # noqa: BLE001 - scoring must never 500 the page
+        session.rollback()
+        print(f"[score] scoring failed for job {job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Couldn't score this job right now (the AI model may be busy). "
+            "Please try again in a moment.",
+        )
     app.last_status_change = datetime.utcnow()
     session.add(app)
     session.commit()
@@ -513,9 +522,18 @@ def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResp
         except Exception as e:
             print(f"[tailor] description hydration failed: {e}")
 
-    tailored = tailor_resume(profile_dict, job)
-    diff = compute_diff(profile_dict, tailored)
-    cover = generate_cover_letter(profile_dict, job)
+    try:
+        tailored = tailor_resume(profile_dict, job)
+        diff = compute_diff(profile_dict, tailored)
+        cover = generate_cover_letter(profile_dict, job)
+    except Exception as e:  # noqa: BLE001 - tailoring must never 500 the page
+        session.rollback()
+        print(f"[tailor] generation failed for job {job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Couldn't tailor this resume right now (the AI model may be busy). "
+            "Please try again in a moment.",
+        )
 
     # Render the tailored resume to PDF — contact comes from master profile,
     # rest from the tailored content.
@@ -675,7 +693,16 @@ def claim_gap(
     app = session.exec(select(Application).where(Application.job_id == job_id)).first()
     if app is None:
         app = Application(job_id=job_id)
-    _rescore_app(profile_dict, job, app)
+    try:
+        _rescore_app(profile_dict, job, app)
+    except Exception as e:  # noqa: BLE001 - scoring must never 500 the page
+        session.rollback()
+        print(f"[score] scoring failed for job {job_id}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Couldn't score this job right now (the AI model may be busy). "
+            "Please try again in a moment.",
+        )
     app.last_status_change = datetime.utcnow()
     session.add(app)
     session.commit()

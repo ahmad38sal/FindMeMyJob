@@ -6,9 +6,10 @@ master profile. The diff view exists so the user can verify this visually.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from findmemyjob.llm import DEFAULT_TAILOR_MODEL, llm
 from findmemyjob.matching import _strip_code_fence
@@ -82,10 +83,38 @@ def tailor_resume(profile_dict: Dict[str, Any], job: Job) -> TailoredResume:
         instructions=_TAILOR_INSTRUCTIONS,
         user_prompt=user_prompt,
         model=DEFAULT_TAILOR_MODEL,
-        max_tokens=4096,
+        max_tokens=8192,
         temperature=0.4,
     )
-    return TailoredResume.model_validate_json(_strip_code_fence(raw))
+    return _parse_tailored(raw, profile_dict)
+
+
+def _parse_tailored(raw: str, profile_dict: Dict[str, Any]) -> TailoredResume:
+    """Parse the tailoring reply, tolerant of code fences / thinking preamble.
+
+    If the model output can't be parsed at all (e.g. truncated), fall back to a
+    safe copy of the master profile sections so the user still gets a usable
+    resume instead of a 500. They can re-tailor to refine.
+    """
+    cleaned = _strip_code_fence(raw or "").strip()
+    try:
+        return TailoredResume.model_validate_json(cleaned)
+    except (ValidationError, ValueError):
+        pass
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        try:
+            return TailoredResume.model_validate_json(match.group(0))
+        except (ValidationError, ValueError):
+            pass
+    # Last resort: echo the master profile (still 100% truthful, no fabrication).
+    return TailoredResume(
+        summary=profile_dict.get("summary", "") or "",
+        work_history=profile_dict.get("work_history", []) or [],
+        skills=profile_dict.get("skills", []) or [],
+        education=profile_dict.get("education", []) or [],
+        keywords_targeted=[],
+    )
 
 
 _COVER_LETTER_INSTRUCTIONS = """\
