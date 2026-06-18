@@ -362,20 +362,28 @@ def add_by_url(
             "Please try again in a moment, or paste the description manually.",
         )
 
-    existing = session.exec(
-        select(Job).where(Job.source == job.source).where(Job.source_id == job.source_id)
-    ).first()
-    if existing:
-        existing.description = job.description or existing.description
-        existing.salary_min = job.salary_min or existing.salary_min
-        existing.salary_max = job.salary_max or existing.salary_max
-        session.add(existing)
+    try:
+        existing = session.exec(
+            select(Job).where(Job.source == job.source).where(Job.source_id == job.source_id)
+        ).first()
+        if existing:
+            existing.description = job.description or existing.description
+            existing.salary_min = job.salary_min or existing.salary_min
+            existing.salary_max = job.salary_max or existing.salary_max
+            session.add(existing)
+            session.commit()
+            return RedirectResponse(url=f"/jobs/{existing.id}", status_code=303)
+        session.add(job)
         session.commit()
-        return RedirectResponse(url=f"/jobs/{existing.id}", status_code=303)
-    session.add(job)
-    session.commit()
-    session.refresh(job)
-    return RedirectResponse(url=f"/jobs/{job.id}", status_code=303)
+        session.refresh(job)
+        return RedirectResponse(url=f"/jobs/{job.id}", status_code=303)
+    except Exception as e:  # noqa: BLE001 - don't leak a 500 on DB write
+        session.rollback()
+        print(f"[add-by-url] DB write failed for {url!r}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Extracted the job but couldn't save it. Please try again in a moment.",
+        )
 
 
 @router.post("/{job_id}/score")
