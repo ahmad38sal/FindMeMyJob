@@ -562,6 +562,13 @@ def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResp
     app = session.exec(select(Application).where(Application.job_id == job_id)).first()
     if app is None:
         app = Application(job_id=job_id)
+    # If the user tailored without scoring first, compute a match score now so
+    # the tracker still shows it. Best-effort — never block tailoring on it.
+    if app.match_score is None:
+        try:
+            _rescore_app(profile_dict, job, app)
+        except Exception as e:  # noqa: BLE001
+            print(f"[tailor] auto-score skipped for job {job_id}: {e}")
     app.tailored_resume_id = resume.id
     app.cover_letter = cover
     app.status = ApplicationStatus.ready

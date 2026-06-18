@@ -56,10 +56,14 @@
         <pre class="cover">{{ app.cover_letter }}</pre>
     {% else %}
         <form action="/jobs/{{ job.id }}/tailor" method="post">
-            <button type="submit" class="btn primary"
-                    {% if not app or app.match_score is none %}disabled title="Score first"{% endif %}>
+            <button type="submit" class="btn primary">
                 Tailor for this role
             </button>
+            {% if not app or app.match_score is none %}
+            <span class="muted" style="font-size: 13px; margin-left: 8px;">
+                Tip: this will also score the match for you.
+            </span>
+            {% endif %}
         </form>
     {% endif %}
 </section>
