@@ -4,6 +4,7 @@ Loads from .env if present (don't commit .env — see .gitignore).
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -14,14 +15,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Local data
-    data_dir: Path = Path("./data")
+    # Local data directory — on Railway, mount a volume and set DATA_DIR=/data
+    data_dir: Path = Field(default_factory=lambda: Path(os.environ.get("DATA_DIR", "./data")))
+
+    # Postgres (Railway) or leave unset for SQLite fallback
+    database_url: Optional[str] = Field(default=None, validation_alias="DATABASE_URL")
 
     # Apple internal careers
     apple_internal_careers_url: Optional[str] = None
     appleconnect_cookie_path: Optional[Path] = None
 
-    # FastAPI
+    # FastAPI dev server
     host: str = "127.0.0.1"
     port: int = 8000
 

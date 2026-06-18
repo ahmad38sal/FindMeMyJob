@@ -42,9 +42,9 @@ def view_profile(request: Request, session: Session = Depends(get_session)) -> H
     ]
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "profile.html",
         {
-            "request": request,
             "profile": profile,
             "profile_json": json.dumps(profile.model_dump(), indent=2, default=str),
             "claimed_skills": claimed_skills,
@@ -183,6 +183,22 @@ def save_external_companies(
 # ---------------------------------------------------------------------------
 # Search filters (Apple internal)
 # ---------------------------------------------------------------------------
+
+@router.post("/apple-session/upload")
+async def upload_apple_session(
+    file: UploadFile = File(...),
+) -> RedirectResponse:
+    """Save an apple_session.json (Playwright storage state) to the data dir.
+
+    The file must be a Playwright browser storage-state JSON exported after
+    logging in to AppleConnect in a headed browser locally.  Once uploaded,
+    the apple_internal source can use it for headless scraping on Railway.
+    """
+    dest = settings.data_dir / "apple_session.json"
+    with dest.open("wb") as fh:
+        shutil.copyfileobj(file.file, fh)
+    return RedirectResponse(url="/profile", status_code=303)
+
 
 @router.post("/search/regenerate")
 def regenerate_search_queries(

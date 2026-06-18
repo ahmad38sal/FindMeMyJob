@@ -5,15 +5,19 @@ Two-stage pipeline:
      blocklist). No LLM call. Drops obvious mismatches before they cost tokens.
   2. `score_job` — LLM-based scoring on what survives. The stretch slider feeds
      the prompt and decides how lenient the qualification check is.
+
+Async bulk scoring via `score_jobs_bulk` runs up to 5 jobs concurrently using
+an asyncio.Semaphore to avoid flooding the LLM API.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from findmemyjob.llm import DEFAULT_MATCH_MODEL, llm
+from findmemyjob.llm import DEFAULT_MATCH_MODEL, _strip_code_fence, llm
 from findmemyjob.models import Job
 
 
@@ -79,11 +83,9 @@ Return STRICT JSON with this shape (no commentary, no markdown):
 """
 
 
-def score_job(profile_dict: Dict[str, Any], job: Job) -> ScoreResult:
-    """LLM-score a single job against the profile (with stretch slider applied)."""
+def _build_user_prompt(profile_dict: Dict[str, Any], job: Job) -> str:
     stretch = (profile_dict.get("preferences") or {}).get("stretch_slider", 30)
-
-    user_prompt = (
+    return (
         f"Stretch slider value: {stretch}\n\n"
         f"JOB:\n"
         f"Title: {job.title}\n"
@@ -96,6 +98,10 @@ def score_job(profile_dict: Dict[str, Any], job: Job) -> ScoreResult:
         f"Score this match. Output JSON only."
     )
 
+
+def score_job(profile_dict: Dict[str, Any], job: Job) -> ScoreResult:
+    """LLM-score a single job against the profile (with stretch slider applied)."""
+    user_prompt = _build_user_prompt(profile_dict, job)
     raw = llm.complete_with_cached_profile(
         profile=profile_dict,
         instructions=_MATCH_INSTRUCTIONS,
@@ -107,11 +113,51 @@ def score_job(profile_dict: Dict[str, Any], job: Job) -> ScoreResult:
     return ScoreResult.model_validate_json(_strip_code_fence(raw))
 
 
-def _strip_code_fence(s: str) -> str:
-    """LLMs sometimes wrap JSON in ```json blocks despite the instruction not to."""
-    s = s.strip()
-    if s.startswith("```"):
-        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
-        if s.endswith("```"):
-            s = s.rsplit("```", 1)[0]
-    return s.strip()
+async def _score_one_async(
+    semaphore: asyncio.Semaphore,
+    profile_dict: Dict[str, Any],
+    job: Job,
+) -> ScoreResult:
+    """Score a single job respecting the shared semaphore."""
+    async with semaphore:
+        drop_reason = prefilter(profile_dict, job)
+        if drop_reason:
+            return ScoreResult(
+                score=0,
+                reasoning=f"Pre-filtered: {drop_reason}",
+                gaps=[],
+                stretch_required=False,
+                matched_skills=[],
+            )
+        user_prompt = _build_user_prompt(profile_dict, job)
+        raw = await llm.acomplete_with_cached_profile(
+            profile=profile_dict,
+            instructions=_MATCH_INSTRUCTIONS,
+            user_prompt=user_prompt,
+            model=DEFAULT_MATCH_MODEL,
+            max_tokens=1024,
+            temperature=0.2,
+        )
+        return ScoreResult.model_validate_json(_strip_code_fence(raw))
+
+
+async def score_jobs_bulk(
+    profile_dict: Dict[str, Any],
+    jobs: List[Job],
+    concurrency: int = 5,
+) -> Dict[int, ScoreResult]:
+    """Score many jobs concurrently (max *concurrency* in-flight at a time).
+
+    Returns a mapping of ``job.id -> ScoreResult``.
+    Jobs with no ``id`` are silently skipped.
+    """
+    semaphore = asyncio.Semaphore(concurrency)
+    tasks = {
+        job.id: _score_one_async(semaphore, profile_dict, job)
+        for job in jobs
+        if job.id is not None
+    }
+    results: Dict[int, ScoreResult] = {}
+    for job_id, coro in tasks.items():
+        results[job_id] = await coro
+    return results

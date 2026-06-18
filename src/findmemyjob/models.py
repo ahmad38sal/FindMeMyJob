@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, Index
 from sqlmodel import SQLModel, Field as SQLField
 
 
@@ -103,6 +103,10 @@ class Profile(SQLModel, table=True):
 
 class Job(SQLModel, table=True):
     """Normalized job posting from any source."""
+    __table_args__ = (
+        Index("ix_job_source_source_id", "source", "source_id"),
+    )
+
     id: Optional[int] = SQLField(default=None, primary_key=True)
     source: str = SQLField(index=True)              # apple_internal, greenhouse, lever, ...
     source_id: str = SQLField(index=True)           # the source's own id, for dedup

@@ -23,9 +23,9 @@ def home(request: Request, session: Session = Depends(get_session)) -> HTMLRespo
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "home.html",
         {
-            "request": request,
             "profile_set": profile is not None and bool((profile.contact or {}).get("name")),
             "job_count": job_count,
             "pending_count": pending_count,

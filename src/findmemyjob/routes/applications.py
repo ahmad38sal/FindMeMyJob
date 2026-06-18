@@ -16,4 +16,4 @@ def list_applications(request: Request, session: Session = Depends(get_session))
     jobs_by_id = {j.id: j for j in session.exec(select(Job)).all()}
     rows = [{"app": a, "job": jobs_by_id.get(a.job_id)} for a in apps]
     templates = request.app.state.templates
-    return templates.TemplateResponse("applications.html", {"request": request, "rows": rows})
+    return templates.TemplateResponse(request, "applications.html", {"rows": rows})

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from findmemyjob.db import get_session
-from findmemyjob.matching import prefilter, score_job
+from findmemyjob.matching import prefilter, score_job, score_jobs_bulk
 from findmemyjob.models import (
     Application,
     ApplicationStatus,
@@ -65,8 +65,9 @@ def _render_match_partial(
     templates = request.app.state.templates
     work_history = profile.work_history if profile else []
     return templates.TemplateResponse(
+        request,
         "_match_section.html",
-        {"request": request, "job": job, "app": app, "work_history": work_history},
+        {"job": job, "app": app, "work_history": work_history},
     )
 
 
@@ -75,9 +76,9 @@ def _render_salary_partial(request: Request, job: Job) -> HTMLResponse:
     templates = request.app.state.templates
     estimate = (job.raw or {}).get("salary_estimate")
     return templates.TemplateResponse(
+        request,
         "_salary_panel.html",
         {
-            "request": request,
             "job": job,
             "estimate": estimate,
             "fmt_money": fmt_money,
@@ -229,9 +230,9 @@ def list_jobs(
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "jobs.html",
         {
-            "request": request,
             "rows": decorated,
             "total": len(rows),
             "shown": len(decorated),
@@ -244,6 +245,53 @@ def list_jobs(
             "all_statuses": all_statuses,
         },
     )
+
+
+@router.post("/score-all")
+async def score_all_jobs(session: Session = Depends(get_session)) -> RedirectResponse:
+    """Score all unscored jobs concurrently (up to 5 in-flight at once).
+
+    Creates or updates Application rows with match scores, then redirects
+    to /jobs so the updated scores are visible immediately.
+    """
+    profile_dict = _profile_dict(session)
+
+    # Collect jobs that don't have a score yet
+    all_jobs = session.exec(select(Job)).all()
+    job_apps: Dict[int, Application] = {}
+    for app in session.exec(select(Application)).all():
+        cur = job_apps.get(app.job_id)
+        if cur is None or app.last_status_change > cur.last_status_change:
+            job_apps[app.job_id] = app
+
+    unscored = [
+        j for j in all_jobs
+        if j.id is not None and (
+            j.id not in job_apps or job_apps[j.id].match_score is None
+        )
+    ]
+
+    if not unscored:
+        return RedirectResponse(url="/jobs", status_code=303)
+
+    results = await score_jobs_bulk(profile_dict, unscored)
+
+    now = datetime.utcnow()
+    for job in unscored:
+        if job.id not in results:
+            continue
+        result = results[job.id]
+        app = job_apps.get(job.id)
+        if app is None:
+            app = Application(job_id=job.id)
+        app.match_score = result.score
+        app.match_reasoning = result.reasoning
+        app.gaps = result.gaps
+        app.stretch_required = result.stretch_required
+        app.last_status_change = now
+        session.add(app)
+    session.commit()
+    return RedirectResponse(url="/jobs", status_code=303)
 
 
 @router.post("/refresh")
@@ -373,9 +421,10 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
+        request,
         "job_detail.html",
         {
-            "request": request, "job": job, "app": app, "resume": resume,
+            "job": job, "app": app, "resume": resume,
             "work_history": work_history,
             "estimate": estimate,
             "fmt_money": fmt_money,

@@ -15,7 +15,8 @@ __pycache__/
 venv/
 env/
 
-# Local data (DB, cached resumes, generated PDFs)
+# Local data (DB, cached resumes, generated PDFs, Apple session)
+data/
 
 # Secrets
 .env

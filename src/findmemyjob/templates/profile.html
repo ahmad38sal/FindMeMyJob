@@ -41,6 +41,19 @@
 </section>
 
 <section class="panel">
+    <h2>Apple internal — session upload</h2>
+    <p class="muted">
+        Upload a Playwright storage-state JSON (<code>apple_session.json</code>) exported
+        after logging in to AppleConnect in a local headed browser.
+        Once uploaded, the Apple internal source can scrape headlessly on Railway.
+    </p>
+    <form action="/profile/apple-session/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".json" required>
+        <button type="submit" class="btn">Upload session</button>
+    </form>
+</section>
+
+<section class="panel">
     <h2>Apple internal — search filters</h2>
     <p class="muted">
         Drives <code>POST /jobs/refresh</code>. Queries are auto-generated from your profile;
