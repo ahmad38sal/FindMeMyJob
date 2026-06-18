@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} · FindMeMyJob{% endblock %}
+{% block content %}
+<section class="panel" style="max-width: 640px; margin: 48px auto; text-align: center;">
+    <h1 style="font-size: 56px; margin: 0; color: var(--accent, #4f46e5);">{{ status_code }}</h1>
+    <p style="font-size: 18px; margin: 12px 0 24px;">{{ message }}</p>
+    <p>
+        <a href="javascript:history.back()" class="btn">Go back</a>
+        <a href="/" class="btn primary">Home</a>
+    </p>
+</section>
+{% endblock %}

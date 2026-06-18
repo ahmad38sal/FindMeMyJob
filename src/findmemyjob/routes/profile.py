@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlmodel import Session
 
@@ -91,15 +91,49 @@ def save_profile_json(
     profile_json: str = Form(...),
     session: Session = Depends(get_session),
 ) -> RedirectResponse:
-    data = json.loads(profile_json)
+    # Validate the pasted JSON before touching the DB so a typo (trailing comma,
+    # missing quote, etc.) gives a clear message instead of a 500.
+    try:
+        data = json.loads(profile_json)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            400,
+            f"Your profile JSON has a syntax error (line {e.lineno}, column "
+            f"{e.colno}): {e.msg}. Nothing was saved — fix the JSON and try again.",
+        )
+    if not isinstance(data, dict):
+        raise HTTPException(
+            400,
+            "Profile must be a JSON object (starting with '{'). Nothing was saved.",
+        )
+
     profile = _get_or_create_profile(session)
-    for field in ("contact", "summary", "work_history", "education",
-                  "skills", "certifications", "preferences"):
+    expected_types = {
+        "contact": dict,
+        "summary": str,
+        "work_history": list,
+        "education": list,
+        "skills": list,
+        "certifications": list,
+        "preferences": dict,
+    }
+    for field, typ in expected_types.items():
         if field in data:
+            if not isinstance(data[field], typ):
+                raise HTTPException(
+                    400,
+                    f"Field '{field}' should be a {typ.__name__}. Nothing was "
+                    "saved — fix it and try again.",
+                )
             setattr(profile, field, data[field])
     profile.updated_at = datetime.utcnow()
-    session.add(profile)
-    session.commit()
+    try:
+        session.add(profile)
+        session.commit()
+    except Exception as e:  # noqa: BLE001
+        session.rollback()
+        print(f"[profile] save failed: {type(e).__name__}: {e}")
+        raise HTTPException(503, "Couldn't save your profile right now. Please try again.")
     return RedirectResponse(url="/profile", status_code=303)
 
 

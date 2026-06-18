@@ -6,10 +6,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from findmemyjob.config import settings
 from findmemyjob.db import init_db
@@ -46,6 +49,57 @@ app.include_router(profile.router, prefix="/profile", tags=["profile"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["applications"])
 app.include_router(ext.router, prefix="/api/ext", tags=["ext"])
+
+
+# ---------------------------------------------------------------------------
+# Friendly error handling: never show a raw "Internal Server Error" to a user
+# browsing the site. API (extension) routes still get JSON.
+# ---------------------------------------------------------------------------
+
+def _wants_json(request: Request) -> bool:
+    return request.url.path.startswith("/api/") or "application/json" in (
+        request.headers.get("accept", "")
+    )
+
+
+def _error_page(request: Request, status_code: int, message: str) -> HTMLResponse:
+    try:
+        return TEMPLATES.TemplateResponse(
+            request,
+            "error.html",
+            {"status_code": status_code, "message": message},
+            status_code=status_code,
+        )
+    except Exception:  # noqa: BLE001 - template missing/broken; plain fallback
+        return HTMLResponse(
+            f"<h1>{status_code}</h1><p>{message}</p>"
+            '<p><a href="/">Back to home</a></p>',
+            status_code=status_code,
+        )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else "Something went wrong."
+    if _wants_json(request):
+        return JSONResponse({"detail": detail}, status_code=exc.status_code)
+    return _error_page(request, exc.status_code, detail)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Log full detail server-side; show a friendly message to the user.
+    print(f"[error] unhandled {type(exc).__name__} on {request.url.path}: {exc}")
+    if _wants_json(request):
+        return JSONResponse(
+            {"detail": "Internal server error"}, status_code=500
+        )
+    return _error_page(
+        request,
+        500,
+        "Something went wrong on our end. Please try again — if it keeps "
+        "happening, the AI model may be busy.",
+    )
 
 
 def main() -> None:
