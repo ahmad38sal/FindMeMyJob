@@ -33,3 +33,4 @@ data/
 dist/
 build/
 *.whl
+seed/
