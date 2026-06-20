@@ -533,3 +533,15 @@ details.panel[open] > summary::before { content: "▾ "; }
     .field-grid { grid-template-columns: 1fr; }
     nav { gap: 14px; }
 }
+
+/* Discovery / Top Picks */
+.chip {
+    display: inline-block;
+    background: #eef2ff;
+    color: #3730a3;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 12px;
+    margin: 0 4px 4px 0;
+}
+ul.job-list { list-style: none; padding: 0; margin: 16px 0; }

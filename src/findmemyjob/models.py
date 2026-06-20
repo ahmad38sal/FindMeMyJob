@@ -126,6 +126,50 @@ class Job(SQLModel, table=True):
     fetched_at: datetime = SQLField(default_factory=datetime.utcnow)
     raw: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
 
+    # --- Discovery engine (additive, nullable) ---
+    # Set by the discovery pipeline; existing rows simply stay None.
+    discovered_at: Optional[datetime] = None        # first time discovery surfaced it
+    fit_score: Optional[float] = None               # blended fit (0-100)
+    fit_reasoning: Optional[str] = None
+    fit_gaps: Optional[List[str]] = SQLField(default=None, sa_column=Column(JSON))
+    undated: Optional[bool] = None                  # True when no posted_at available
+
+
+class SearchProfile(SQLModel, table=True):
+    """Singleton (id=1) — the LLM-derived 'ideal role' search profile.
+
+    Derived from the user's Profile, regenerable on demand. Stored so the
+    discovery pipeline doesn't re-derive on every run.
+    """
+    id: Optional[int] = SQLField(default=1, primary_key=True)
+    titles: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    keywords: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    seniority: Optional[str] = None
+    remote_pref: Optional[str] = None               # remote | hybrid | onsite | any
+    locations: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    salary_min: Optional[int] = None
+    salary_target: Optional[int] = None
+    currency: str = "USD"
+    summary: str = ""                               # human-readable one-liner
+    raw: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
+    generated_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
+class DiscoveryRun(SQLModel, table=True):
+    """One row per discovery-pipeline run — an audit trail + cron report source."""
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    started_at: datetime = SQLField(default_factory=datetime.utcnow)
+    finished_at: Optional[datetime] = None
+    sources_used: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    fetched_count: int = 0
+    new_count: int = 0          # brand-new jobs inserted this run
+    scored_count: int = 0
+    fresh_count: int = 0        # passed the freshness filter
+    error: Optional[str] = None
+    # The NEW top matches surfaced this run — what cron reports.
+    # Each: {job_id, title, company, url, score, reasoning, posted_at, undated}
+    top_matches: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
+
 
 class ApplicationStatus(str, Enum):
     pending = "pending"           # newly matched, not yet reviewed

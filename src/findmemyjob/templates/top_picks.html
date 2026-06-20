@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Top Picks{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>Top Picks for you</h1>
+    <span class="muted">{{ rows|length }} fresh matches (last {{ max_age_days }} days)</span>
+</div>
+
+{% if not profile_set %}
+<section class="panel">
+    <p>Set up your <a href="/profile">profile</a> first — the discovery engine
+    derives your ideal-role search from it.</p>
+</section>
+{% endif %}
+
+<section class="panel" style="display:flex; gap:16px; align-items:center; flex-wrap:wrap">
+    <form action="/jobs/discover" method="post" style="display:inline; margin:0">
+        <button type="submit" class="btn primary">Find new jobs now</button>
+        <span class="htmx-indicator spinner" aria-hidden="true"></span>
+    </form>
+    <form action="/jobs/discover" method="post" style="display:inline; margin:0">
+        <input type="hidden" name="regenerate" value="1">
+        <button type="submit" class="btn">Re-derive search + find</button>
+    </form>
+    <form action="/jobs/search-profile/regenerate" method="post" style="display:inline; margin:0">
+        <button type="submit" class="btn small">Regenerate search profile only</button>
+    </form>
+    <a href="/jobs" class="btn small">All jobs →</a>
+</section>
+
+{% if search_profile %}
+<section class="panel">
+    <h3 style="margin-top:0">Your ideal-role search profile</h3>
+    {% if search_profile.summary %}<p class="muted">{{ search_profile.summary }}</p>{% endif %}
+    <p><strong>Titles:</strong>
+        {% for t in search_profile.titles %}<span class="chip">{{ t }}</span>{% else %}<span class="muted">none</span>{% endfor %}
+    </p>
+    <p><strong>Keywords:</strong>
+        {% for k in search_profile.keywords %}<span class="chip">{{ k }}</span>{% else %}<span class="muted">none</span>{% endfor %}
+    </p>
+    <p class="muted">
+        Seniority: {{ search_profile.seniority or '—' }} ·
+        Remote: {{ search_profile.remote_pref or 'any' }} ·
+        Salary target: {{ search_profile.salary_target or '—' }} {{ search_profile.currency }} ·
+        Updated: {{ search_profile.generated_at.strftime('%Y-%m-%d %H:%M') if search_profile.generated_at else '—' }}
+    </p>
+</section>
+{% endif %}
+
+{% if last_run %}
+<section class="panel">
+    <p class="muted">
+        Last run: {{ last_run.started_at.strftime('%Y-%m-%d %H:%M') if last_run.started_at else '—' }} ·
+        sources: {{ last_run.sources_used|join(', ') or '—' }} ·
+        fetched {{ last_run.fetched_count }}, new {{ last_run.new_count }},
+        scored {{ last_run.scored_count }}, fresh {{ last_run.fresh_count }}
+        {% if last_run.error %} · <span style="color:#b00">error: {{ last_run.error }}</span>{% endif %}
+    </p>
+</section>
+{% endif %}
+
+{% if not rows %}
+<section class="panel">
+    <p>No ranked matches yet. Click <strong>Find new jobs now</strong> to run discovery.</p>
+</section>
+{% else %}
+<ul class="job-list">
+    {% for job in rows %}
+    <li class="panel" style="margin-bottom:12px">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start">
+            <div style="flex:1">
+                <a href="/jobs/{{ job.id }}" style="font-weight:600; font-size:1.05em">{{ job.title }}</a>
+                <div class="muted">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}
+                    {% if job.work_mode %} · {{ job.work_mode }}{% endif %}
+                    · <span class="chip">{{ job.source }}</span>
+                </div>
+                {% if job.posted_at %}
+                    <div class="muted">Posted {{ job.posted_at.strftime('%Y-%m-%d') }}</div>
+                {% elif job.undated %}
+                    <div class="muted"><span class="chip">undated</span> posted date unknown</div>
+                {% endif %}
+                {% if job.fit_reasoning %}<p style="margin:6px 0">{{ job.fit_reasoning }}</p>{% endif %}
+                {% if job.fit_gaps %}
+                <p class="muted"><strong>Gaps:</strong>
+                    {% for g in job.fit_gaps %}<span class="chip">{{ g }}</span>{% endfor %}
+                </p>
+                {% endif %}
+            </div>
+            <div style="text-align:right; min-width:90px">
+                <div style="font-size:1.6em; font-weight:700">{{ job.fit_score|round|int }}</div>
+                <div class="muted">fit score</div>
+            </div>
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

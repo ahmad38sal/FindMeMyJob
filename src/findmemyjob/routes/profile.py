@@ -295,6 +295,11 @@ _SOURCE_PREF_KEYS = {
     "enable_remoteok",
     "enable_hn_whoishiring",
     "hn_limit",
+    "discovery_companies",
+    "discovery_max_age_days",
+    "discovery_enable_remoteok",
+    "discovery_enable_remotive",
+    "discovery_enable_hn",
 }
 
 
@@ -402,7 +407,7 @@ def save_external_companies(
             continue
         src, slug = line.split(":", 1)
         src, slug = src.strip().lower(), slug.strip().lower()
-        if src in {"greenhouse", "lever"} and slug:
+        if src in {"greenhouse", "lever", "ashby"} and slug:
             entries.append(f"{src}:{slug}")
 
     profile = _get_or_create_profile(session)

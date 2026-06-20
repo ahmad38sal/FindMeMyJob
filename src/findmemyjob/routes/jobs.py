@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from findmemyjob.db import get_session
+from findmemyjob.discovery import get_or_create_search_profile, run_discovery
 from findmemyjob.matching import prefilter, score_job, score_jobs_bulk
+from findmemyjob.models import DiscoveryRun, SearchProfile
 from findmemyjob.models import (
     Application,
     ApplicationStatus,
@@ -30,6 +32,7 @@ from findmemyjob.sources.apple_internal import (
     fetch_one_by_url as apple_fetch_one_by_url,
     hydrate_job_description,
 )
+from findmemyjob.sources.ashby import fetch_one_by_url as ashby_fetch_one_by_url
 from findmemyjob.sources.greenhouse import GreenhouseSource
 from findmemyjob.sources.hn_whoishiring import HNWhoIsHiringSource
 from findmemyjob.sources.lever import LeverSource
@@ -155,6 +158,8 @@ def _fetch_one_by_url(url: str) -> Job:
         return greenhouse_source.fetch_one_by_url(url)
     if "lever.co" in host:
         return lever_source.fetch_one_by_url(url)
+    if "ashbyhq.com" in host:
+        return ashby_fetch_one_by_url(url)
     return generic_source.fetch_one_by_url(url)
 
 
@@ -346,6 +351,120 @@ def refresh_jobs(session: Session = Depends(get_session)) -> RedirectResponse:
                 session.add(job)
         session.commit()
     return RedirectResponse(url="/jobs", status_code=303)
+
+
+def _max_age_days(prefs: Dict) -> int:
+    try:
+        return max(1, min(120, int(prefs.get("discovery_max_age_days") or 14)))
+    except (ValueError, TypeError):
+        return 14
+
+
+@router.get("/top-picks", response_class=HTMLResponse)
+def top_picks(
+    request: Request,
+    session: Session = Depends(get_session),
+    max_age_days: int = 0,
+) -> HTMLResponse:
+    """Ranked 'Top Picks for you' — best fresh discovered matches with reasoning."""
+    profile = session.get(Profile, 1)
+    prefs = (profile.preferences if profile else {}) or {}
+    if max_age_days <= 0:
+        max_age_days = _max_age_days(prefs)
+    cutoff = datetime.utcnow() - timedelta(days=max_age_days)
+
+    sp = session.get(SearchProfile, 1)
+    last_run = session.exec(
+        select(DiscoveryRun).order_by(DiscoveryRun.started_at.desc())
+    ).first()
+
+    # Jobs that have been fit-scored by the discovery engine.
+    scored = session.exec(
+        select(Job).where(Job.fit_score != None)  # noqa: E711
+    ).all()
+
+    def is_fresh(j: Job) -> bool:
+        return j.posted_at is None or j.posted_at >= cutoff
+
+    rows = [j for j in scored if is_fresh(j)]
+    rows.sort(key=lambda j: (j.fit_score or 0), reverse=True)
+    rows = rows[:50]
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "top_picks.html",
+        {
+            "rows": rows,
+            "search_profile": sp,
+            "last_run": last_run,
+            "max_age_days": max_age_days,
+            "profile_set": profile is not None and bool((profile.contact or {}).get("name")),
+        },
+    )
+
+
+@router.post("/discover")
+def discover(
+    session: Session = Depends(get_session),
+    regenerate: str = Form(""),
+) -> RedirectResponse:
+    """On-demand 'Find new jobs now' — runs the full pipeline, then shows picks."""
+    profile = session.get(Profile, 1)
+    prefs = (profile.preferences if profile else {}) or {}
+    run_discovery(
+        session,
+        regenerate_search_profile=bool(regenerate),
+        max_age_days=_max_age_days(prefs),
+    )
+    return RedirectResponse(url="/jobs/top-picks", status_code=303)
+
+
+@router.post("/api/discover")
+def api_discover(
+    session: Session = Depends(get_session),
+    regenerate: bool = False,
+) -> JSONResponse:
+    """JSON discovery endpoint for cron. Returns the run summary + NEW top matches.
+
+    Response shape:
+      {
+        "run_id": int, "started_at": iso, "finished_at": iso,
+        "sources_used": [...], "fetched": n, "new": n, "scored": n, "fresh": n,
+        "error": null | str,
+        "top_matches": [
+          {job_id, title, company, url, score, reasoning, gaps, posted_at, undated}, ...
+        ]
+      }
+    """
+    profile = session.get(Profile, 1)
+    prefs = (profile.preferences if profile else {}) or {}
+    run = run_discovery(
+        session,
+        regenerate_search_profile=regenerate,
+        max_age_days=_max_age_days(prefs),
+    )
+    return JSONResponse({
+        "run_id": run.id,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "sources_used": run.sources_used,
+        "fetched": run.fetched_count,
+        "new": run.new_count,
+        "scored": run.scored_count,
+        "fresh": run.fresh_count,
+        "error": run.error,
+        "top_matches": run.top_matches,
+    })
+
+
+@router.post("/search-profile/regenerate")
+def regenerate_search_profile_route(
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Re-derive the ideal-role search profile from the current Profile."""
+    get_or_create_search_profile(session, regenerate=True)
+    return RedirectResponse(url="/jobs/top-picks", status_code=303)
 
 
 @router.post("/add-by-url")
