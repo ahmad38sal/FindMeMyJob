@@ -99,10 +99,17 @@ def _is_transient_llm_error(exc: Exception) -> bool:
     )
 
 
-def _llm_extract(url: str, text: str) -> Dict[str, Any]:
+def _llm_extract(text: str, *, url: Optional[str] = None) -> Dict[str, Any]:
     """Call the LLM to extract a job record, with retry/backoff and a model
-    fallback. Raises RuntimeError with a user-friendly message on failure."""
-    user_msg = f"URL: {url}\n\nPAGE TEXT:\n{text}\n\nReturn JSON now."
+    fallback. Raises RuntimeError with a user-friendly message on failure.
+
+    `url` is optional context — present for the add-by-url path, absent when the
+    user pastes raw posting text. Either way the prompt and parsing are shared.
+    """
+    if url:
+        user_msg = f"URL: {url}\n\nPAGE TEXT:\n{text}\n\nReturn JSON now."
+    else:
+        user_msg = f"JOB POSTING TEXT:\n{text}\n\nReturn JSON now."
     models = [_PRIMARY_EXTRACT_MODEL]
     if _FALLBACK_EXTRACT_MODEL != _PRIMARY_EXTRACT_MODEL:
         models.append(_FALLBACK_EXTRACT_MODEL)
@@ -144,6 +151,52 @@ def _llm_extract(url: str, text: str) -> Dict[str, Any]:
     raise RuntimeError(
         f"Couldn't extract this job via AI: {last_exc}"
     ) from last_exc
+
+
+def build_job_from_text(text: str, *, url: Optional[str] = None) -> Job:
+    """Extract a structured Job from raw posting text via the shared LLM extractor.
+
+    Used by the "Paste a job" feature for postings that can't be fetched by URL
+    (login-walled sites, PDFs, emails). `url`, if the user pasted one alongside,
+    is used as the dedup key and stored on the Job. Raises ValueError for
+    too-short input and RuntimeError (friendly message) on LLM failure.
+    """
+    text = (text or "").strip()
+    if len(text) < 40:
+        raise ValueError(
+            "That looks too short to be a job posting. Paste the full job "
+            "description (title, company, and details)."
+        )
+
+    data: Dict[str, Any] = _llm_extract(text[:30_000], url=url or None)
+
+    clean_url = (url or "").strip()
+    parsed = urlparse(clean_url) if clean_url else None
+    host = parsed.netloc.lower() if parsed and parsed.scheme.startswith("http") else ""
+
+    title = (data.get("title") or "Untitled").strip()
+    company = (data.get("company") or host or "Unknown").strip()
+    # Without a URL, dedup by a stable title+company key so re-pasting the same
+    # posting updates rather than duplicates.
+    source_id = clean_url or f"{title.lower()}|{company.lower()}"
+
+    return Job(
+        source="pasted",
+        source_id=source_id,
+        title=title,
+        company=company,
+        team=(data.get("team") or None),
+        location=(data.get("location") or None),
+        work_mode=(data.get("work_mode") or None),
+        salary_min=data.get("salary_min") or None,
+        salary_max=data.get("salary_max") or None,
+        currency=(data.get("currency") or "USD"),
+        seniority=(data.get("seniority") or None),
+        description=(data.get("description") or text).strip(),
+        url=clean_url or None,
+        fetched_at=datetime.utcnow(),
+        raw={"host": host, "manual_add": True, "pasted": True},
+    )
 
 
 def fetch_one_by_url(url: str) -> Job:
@@ -189,7 +242,7 @@ def fetch_one_by_url(url: str) -> Job:
             "require login. Paste the job description manually instead."
         )
 
-    data: Dict[str, Any] = _llm_extract(url, text)
+    data: Dict[str, Any] = _llm_extract(text, url=url)
 
     host = parsed.netloc.lower()
     return Job(

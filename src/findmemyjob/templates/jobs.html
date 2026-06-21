@@ -28,6 +28,18 @@
         <input type="url" name="url" placeholder="Paste any job URL" required class="query-input" style="flex:1">
         <button type="submit" class="btn primary">Add by URL</button>
     </form>
+    <form action="/jobs/paste" method="post" style="display:flex; flex-direction:column; gap:8px; flex-basis:100%; margin:0">
+        <details>
+            <summary class="muted" style="cursor:pointer">Can't add by URL? Paste the job text instead (LinkedIn, PDF, email…)</summary>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px">
+                <textarea name="text" rows="6" required placeholder="Paste the full job posting text here — title, company, and description. The AI extracts the details and scores the fit." class="query-input" style="width:100%; resize:vertical; font-family:inherit"></textarea>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                    <input type="url" name="url" placeholder="Original URL (optional)" class="query-input" style="flex:1; min-width:200px">
+                    <button type="submit" class="btn primary">Add pasted job</button>
+                </div>
+            </div>
+        </details>
+    </form>
 </section>
 
 <form method="get" action="/jobs" class="filter-bar">

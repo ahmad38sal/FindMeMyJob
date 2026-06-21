@@ -518,6 +518,86 @@ def add_by_url(
         )
 
 
+@router.post("/paste")
+def add_by_paste(
+    text: str = Form(...),
+    url: str = Form(""),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Add a job by pasting its raw text — for postings that can't be fetched by
+    URL (login-walled sites like LinkedIn, PDFs, emails, crawl-blocked pages).
+
+    The shared LLM extractor turns the text into a structured Job, we dedupe and
+    save it, then immediately fit-score it so the match shows on the detail page.
+    """
+    text = (text or "").strip()
+    url = (url or "").strip()
+    if len(text) < 40:
+        raise HTTPException(
+            400,
+            "Please paste the full job posting text (title, company, and "
+            "description). That looked too short.",
+        )
+    try:
+        job = generic_source.build_job_from_text(text, url=url or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:  # noqa: BLE001 - never leak a raw 500
+        print(f"[paste] unexpected extraction error: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Couldn't read that job posting right now due to an unexpected error. "
+            "Please try again in a moment.",
+        )
+
+    try:
+        existing = session.exec(
+            select(Job).where(Job.source == job.source).where(Job.source_id == job.source_id)
+        ).first()
+        if existing:
+            existing.description = job.description or existing.description
+            existing.salary_min = job.salary_min or existing.salary_min
+            existing.salary_max = job.salary_max or existing.salary_max
+            existing.work_mode = job.work_mode or existing.work_mode
+            session.add(existing)
+            session.commit()
+            session.refresh(existing)
+            job = existing
+        else:
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+    except Exception as e:  # noqa: BLE001 - don't leak a 500 on DB write
+        session.rollback()
+        print(f"[paste] DB write failed: {type(e).__name__}: {e}")
+        raise HTTPException(
+            503,
+            "Extracted the job but couldn't save it. Please try again in a moment.",
+        )
+
+    # Immediately fit-score so the user sees the match on the detail page.
+    # Best-effort: a scoring failure shouldn't lose the saved job.
+    try:
+        profile_dict = _profile_dict(session)
+        app = session.exec(select(Application).where(Application.job_id == job.id)).first()
+        if app is None:
+            app = Application(job_id=job.id)
+        _rescore_app(profile_dict, job, app)
+        app.last_status_change = datetime.utcnow()
+        session.add(app)
+        session.commit()
+    except HTTPException:
+        # Profile not set up — still keep the job; user can score later.
+        session.rollback()
+    except Exception as e:  # noqa: BLE001 - scoring is best-effort here
+        session.rollback()
+        print(f"[paste] auto-score skipped for job {job.id}: {type(e).__name__}: {e}")
+
+    return RedirectResponse(url=f"/jobs/{job.id}", status_code=303)
+
+
 @router.post("/{job_id}/score")
 def score(
     job_id: int,
