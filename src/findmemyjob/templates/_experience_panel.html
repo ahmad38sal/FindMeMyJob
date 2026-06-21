@@ -1,0 +1,36 @@
+<section class="panel" id="experience-panel">
+    <h2>Add a relevant skill/experience</h2>
+    <p class="muted" style="font-size:13px; max-width:60ch">
+        Quick note in your own words about something you've done that fits this
+        role — even if it's not on your resume. It's saved to your experience
+        bank, linked to this job, and the AI will rewrite it into a polished
+        bullet when you tailor.
+    </p>
+    {% if saved %}<p class="notice">Saved to your experience bank.</p>{% endif %}
+    {% if error %}<p class="notice error">{{ error }}</p>{% endif %}
+    <form action="/jobs/{{ job.id }}/experience" method="post"
+          hx-post="/jobs/{{ job.id }}/experience"
+          hx-target="#experience-panel" hx-swap="outerHTML"
+          style="display:flex; flex-direction:column; gap:8px">
+        <textarea name="raw_text" rows="3" required placeholder="e.g. Led the migration to Kubernetes for 12 services; handled the rollout and on-call runbooks." class="query-input" style="width:100%; resize:vertical; font-family:inherit"></textarea>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <input type="text" name="label" placeholder="Short label (optional)" class="query-input" style="flex:1; min-width:160px">
+            <input type="text" name="category" placeholder="Skill area (optional)" class="query-input" style="flex:1; min-width:160px">
+            <button type="submit" class="btn primary">Add to bank</button>
+        </div>
+    </form>
+    {% if linked_items %}
+    <h3 style="margin-top:12px">Linked to this job</h3>
+    <ul class="job-list">
+        {% for it in linked_items %}
+        <li>
+            {% if it.label %}<strong>{{ it.label }}</strong> — {% endif %}
+            <span class="muted">{{ it.raw_text }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    <p class="muted" style="font-size:13px; margin-top:8px">
+        <a href="/profile/experience">Manage your full experience bank →</a>
+    </p>
+</section>

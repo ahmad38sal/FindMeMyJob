@@ -545,3 +545,5 @@ details.panel[open] > summary::before { content: "▾ "; }
     margin: 0 4px 4px 0;
 }
 ul.job-list { list-style: none; padding: 0; margin: 16px 0; }
+.notice { background: #dcfce7; color: #166534; padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+.notice.error { background: #fee2e2; color: #991b1b; }

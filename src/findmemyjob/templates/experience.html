@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Experience bank{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>Experience bank</h1>
+    <span class="muted">{{ items|length }} note{{ '' if items|length == 1 else 's' }}</span>
+</div>
+
+<p class="muted" style="max-width:60ch">
+    Jot down skills and experiences in your own rough words — including things
+    that aren't on your resume. These stay exactly as you write them. When you
+    tailor a resume, the AI picks the relevant notes and rewrites them into
+    polished, role-specific bullets (never copied verbatim).
+</p>
+
+{% if saved %}<p class="notice">Saved.</p>{% endif %}
+
+<section class="panel">
+    <h2>Add a note</h2>
+    <form action="/profile/experience/add" method="post" style="display:flex; flex-direction:column; gap:8px">
+        <textarea name="raw_text" rows="4" required placeholder="e.g. Rewrote our deploy pipeline so releases went from 40 min to 5; nobody asked me to, I just got sick of waiting." class="query-input" style="width:100%; resize:vertical; font-family:inherit"></textarea>
+        <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <input type="text" name="label" placeholder="Short label (optional)" class="query-input" style="flex:1; min-width:180px">
+            <input type="text" name="category" placeholder="Skill area (optional, e.g. DevOps)" class="query-input" style="flex:1; min-width:180px">
+            <button type="submit" class="btn primary">Add note</button>
+        </div>
+    </form>
+</section>
+
+{% if not items %}
+<section class="panel empty-state">
+    <p>No notes yet. Add your first one above — or add one from a job page while
+    you're looking at a role.</p>
+</section>
+{% else %}
+{% for it in items %}
+<section class="panel">
+    <form action="/profile/experience/{{ it.id }}/edit" method="post" style="display:flex; flex-direction:column; gap:8px">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            {% if it.label %}<strong>{{ it.label }}</strong>{% endif %}
+            {% if it.category %}<span class="badge">{{ it.category }}</span>{% endif %}
+            {% if it.job_id and it.job_id in job_labels %}
+                <span class="muted" style="font-size:13px">linked to {{ job_labels[it.job_id] }}</span>
+            {% endif %}
+            {% if not it.active %}<span class="badge">excluded</span>{% endif %}
+        </div>
+        <textarea name="raw_text" rows="3" required class="query-input" style="width:100%; resize:vertical; font-family:inherit">{{ it.raw_text }}</textarea>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+            <input type="text" name="label" value="{{ it.label or '' }}" placeholder="Short label" class="query-input" style="flex:1; min-width:160px">
+            <input type="text" name="category" value="{{ it.category or '' }}" placeholder="Skill area" class="query-input" style="flex:1; min-width:160px">
+            <label style="display:flex; gap:4px; align-items:center"><input type="checkbox" name="active" value="1" {% if it.active %}checked{% endif %}> include in tailoring</label>
+            <button type="submit" class="btn">Save</button>
+        </div>
+    </form>
+    <form action="/profile/experience/{{ it.id }}/delete" method="post" style="margin-top:6px"
+          onsubmit="return confirm('Delete this note?')">
+        <button type="submit" class="btn small">Delete</button>
+    </form>
+</section>
+{% endfor %}
+{% endif %}
+
+<p style="margin-top:12px"><a href="/profile">← Back to profile</a></p>
+{% endblock %}

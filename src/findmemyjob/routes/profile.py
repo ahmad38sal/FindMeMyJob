@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 from starlette.datastructures import FormData
 
 from findmemyjob.config import settings
 from findmemyjob.db import get_session
 from findmemyjob.importing import import_resume
-from findmemyjob.models import Profile
+from findmemyjob.models import ExperienceItem, Job, Profile
 from findmemyjob.pdf import save_resume_pdf
 from findmemyjob.search_strategy import suggest_search_queries
 
@@ -520,3 +520,114 @@ async def save_search_filters(
         print(f"[profile] search save failed: {type(e).__name__}: {e}")
         raise HTTPException(503, "Couldn't save the search filters. Please try again.")
     return RedirectResponse(url="/profile?saved=1", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Experience bank
+#
+# A reusable knowledge base of the user's skills/experiences in their own rough
+# words — including things not on their resume. Stored RAW (never pre-polished);
+# tailoring reframes relevant items into resume language at tailor time. Items
+# may be linked to a specific Job (added from that job's page) so tailoring for
+# that role prioritizes them.
+# ---------------------------------------------------------------------------
+
+@router.get("/experience", response_class=HTMLResponse)
+def experience_bank(
+    request: Request,
+    saved: int = 0,
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    items = list(session.exec(
+        select(ExperienceItem).order_by(ExperienceItem.created_at.desc())
+    ).all())
+    # Map job_id -> "Title @ Company" for display of linked items.
+    job_ids = {it.job_id for it in items if it.job_id is not None}
+    job_labels: Dict[int, str] = {}
+    for jid in job_ids:
+        job = session.get(Job, jid)
+        if job is not None:
+            job_labels[jid] = f"{job.title} @ {job.company}"
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "experience.html",
+        {"items": items, "job_labels": job_labels, "saved": bool(saved)},
+    )
+
+
+@router.post("/experience/add")
+def add_experience(
+    raw_text: str = Form(...),
+    label: str = Form(""),
+    category: str = Form(""),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Add a central (unlinked) experience-bank note."""
+    text = (raw_text or "").strip()
+    if len(text) < 8:
+        raise HTTPException(
+            400, "Please write a little more about the experience (a few words)."
+        )
+    item = ExperienceItem(
+        raw_text=text,
+        label=(label or "").strip() or None,
+        category=(category or "").strip() or None,
+    )
+    try:
+        session.add(item)
+        session.commit()
+    except Exception as e:  # noqa: BLE001
+        session.rollback()
+        print(f"[experience] add failed: {type(e).__name__}: {e}")
+        raise HTTPException(503, "Couldn't save that note right now. Please try again.")
+    return RedirectResponse(url="/profile/experience?saved=1", status_code=303)
+
+
+@router.post("/experience/{item_id}/edit")
+def edit_experience(
+    item_id: int,
+    raw_text: str = Form(...),
+    label: str = Form(""),
+    category: str = Form(""),
+    active: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    item = session.get(ExperienceItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Experience note not found")
+    text = (raw_text or "").strip()
+    if len(text) < 8:
+        raise HTTPException(
+            400, "Please write a little more about the experience (a few words)."
+        )
+    item.raw_text = text
+    item.label = (label or "").strip() or None
+    item.category = (category or "").strip() or None
+    item.active = bool(active)
+    item.updated_at = datetime.utcnow()
+    try:
+        session.add(item)
+        session.commit()
+    except Exception as e:  # noqa: BLE001
+        session.rollback()
+        print(f"[experience] edit failed: {type(e).__name__}: {e}")
+        raise HTTPException(503, "Couldn't update that note right now. Please try again.")
+    return RedirectResponse(url="/profile/experience?saved=1", status_code=303)
+
+
+@router.post("/experience/{item_id}/delete")
+def delete_experience(
+    item_id: int,
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    item = session.get(ExperienceItem, item_id)
+    if item is not None:
+        try:
+            session.delete(item)
+            session.commit()
+        except Exception as e:  # noqa: BLE001
+            session.rollback()
+            print(f"[experience] delete failed: {type(e).__name__}: {e}")
+            raise HTTPException(503, "Couldn't delete that note right now. Please try again.")
+    return RedirectResponse(url="/profile/experience", status_code=303)

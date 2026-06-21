@@ -135,6 +135,25 @@ class Job(SQLModel, table=True):
     undated: Optional[bool] = None                  # True when no posted_at available
 
 
+class ExperienceItem(SQLModel, table=True):
+    """A personal 'experience bank' note — the user's own rough words about a
+    skill or experience, including things not on their resume.
+
+    Stored RAW exactly as entered; never pre-polished. Tailoring reframes
+    relevant items into resume language at tailor time. An item may optionally be
+    linked to the Job it was added from (`job_id`), in which case tailoring for
+    that job prioritizes it; all active items are general context otherwise.
+    """
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    raw_text: str                                   # the user's rough note (required)
+    label: Optional[str] = None                     # optional short title
+    category: Optional[str] = None                  # optional free-text skill area
+    job_id: Optional[int] = SQLField(default=None, foreign_key="job.id", index=True)
+    active: bool = SQLField(default=True)            # include in tailoring when True
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+    updated_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
 class SearchProfile(SQLModel, table=True):
     """Singleton (id=1) — the LLM-derived 'ideal role' search profile.
 

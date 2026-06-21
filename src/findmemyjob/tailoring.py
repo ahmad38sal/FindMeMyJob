@@ -7,13 +7,13 @@ master profile. The diff view exists so the user can verify this visually.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
 from findmemyjob.llm import DEFAULT_TAILOR_MODEL, llm
 from findmemyjob.matching import _strip_code_fence
-from findmemyjob.models import Job
+from findmemyjob.models import ExperienceItem, Job
 
 
 class TailoredResume(BaseModel):
@@ -60,6 +60,20 @@ claim from the candidate, equivalent to a master-profile bullet:
     already in the evidence text.
   - Do NOT embellish beyond what the evidence text literally says.
 
+Experience bank: the candidate may also supply an EXPERIENCE BANK — rough,
+unpolished notes in their own words about skills and experiences (some not on
+the resume). Treat these as real, candidate-asserted source material, on the
+same footing as a master-profile bullet. When notes are provided:
+  - SELECT only the notes relevant to THIS specific job; ignore the rest.
+  - REWRITE/POLISH selected notes into professional, achievement-oriented resume
+    bullets tailored to the role. NEVER copy the candidate's wording verbatim —
+    always reframe into strong resume language.
+  - Surface polished notes in the summary or as bullets on whichever existing
+    role best fits (or the most recent role if none fits clearly).
+  - Do NOT fabricate facts, metrics, or scope beyond what a note literally
+    states. A note is a claim, not a license to embellish.
+  - Notes tagged "(linked to THIS job)" are the most relevant — prioritize them.
+
 Return STRICT JSON (no commentary, no markdown) with this shape:
 {
   "summary": "tailored 'about me' paragraph, drawn from master summary + work history",
@@ -71,13 +85,55 @@ Return STRICT JSON (no commentary, no markdown) with this shape:
 """
 
 
-def tailor_resume(profile_dict: Dict[str, Any], job: Job) -> TailoredResume:
+def _format_experience_bank(
+    items: Optional[List[ExperienceItem]], job: Job
+) -> str:
+    """Render active experience-bank notes as a prompt block.
+
+    Items linked to THIS job come first and are flagged so the model prioritizes
+    them; the rest follow as general context. Returns "" when there's nothing to
+    add, so an empty bank leaves the prompt byte-for-byte identical to before.
+    """
+    active = [it for it in (items or []) if it.active and (it.raw_text or "").strip()]
+    if not active:
+        return ""
+
+    linked = [it for it in active if it.job_id == job.id]
+    others = [it for it in active if it.job_id != job.id]
+
+    def render(it: ExperienceItem, *, this_job: bool) -> str:
+        head_bits = []
+        if it.label:
+            head_bits.append(it.label.strip())
+        if it.category:
+            head_bits.append(f"[{it.category.strip()}]")
+        if this_job:
+            head_bits.append("(linked to THIS job)")
+        head = " ".join(head_bits)
+        prefix = f"- {head}: " if head else "- "
+        return f"{prefix}{it.raw_text.strip()}"
+
+    lines = [render(it, this_job=True) for it in linked]
+    lines += [render(it, this_job=False) for it in others]
+    return (
+        "\n\nEXPERIENCE BANK (rough notes in the candidate's own words — select "
+        "the relevant ones and REWRITE them into polished resume bullets, never "
+        "verbatim):\n" + "\n".join(lines)
+    )
+
+
+def tailor_resume(
+    profile_dict: Dict[str, Any],
+    job: Job,
+    experience_items: Optional[List[ExperienceItem]] = None,
+) -> TailoredResume:
     user_prompt = (
         f"JOB DESCRIPTION:\n"
         f"{job.title} @ {job.company}\n"
         f"{job.description}\n\n"
         f"Tailor the candidate's resume to this job. Output JSON only."
     )
+    user_prompt += _format_experience_bank(experience_items, job)
     raw = llm.complete_with_cached_profile(
         profile=profile_dict,
         instructions=_TAILOR_INSTRUCTIONS,
@@ -130,12 +186,17 @@ Output: just the letter text. No preamble, no signature block (we'll add one).
 """
 
 
-def generate_cover_letter(profile_dict: Dict[str, Any], job: Job) -> str:
+def generate_cover_letter(
+    profile_dict: Dict[str, Any],
+    job: Job,
+    experience_items: Optional[List[ExperienceItem]] = None,
+) -> str:
     user_prompt = (
         f"JOB:\n{job.title} @ {job.company}\n\n"
         f"DESCRIPTION:\n{job.description}\n\n"
         f"Write the cover letter."
     )
+    user_prompt += _format_experience_bank(experience_items, job)
     return llm.complete_with_cached_profile(
         profile=profile_dict,
         instructions=_COVER_LETTER_INSTRUCTIONS,

@@ -16,6 +16,7 @@ from findmemyjob.models import (
     Application,
     ApplicationStatus,
     ApplyMode,
+    ExperienceItem,
     Job,
     Profile,
     Resume,
@@ -88,6 +89,14 @@ def _render_salary_partial(request: Request, job: Job) -> HTMLResponse:
             "position_pct": position_pct,
         },
     )
+
+
+def _load_experience_items(session: Session) -> List[ExperienceItem]:
+    """All active experience-bank items, for tailoring. Empty list = behaves
+    exactly as before the bank existed."""
+    return list(session.exec(
+        select(ExperienceItem).where(ExperienceItem.active == True)  # noqa: E712
+    ).all())
 
 
 def _profile_dict(session: Session) -> Dict:
@@ -598,6 +607,79 @@ def add_by_paste(
     return RedirectResponse(url=f"/jobs/{job.id}", status_code=303)
 
 
+@router.post("/{job_id}/experience")
+def add_experience_from_job(
+    job_id: int,
+    request: Request,
+    raw_text: str = Form(...),
+    label: str = Form(""),
+    category: str = Form(""),
+    session: Session = Depends(get_session),
+):
+    """Quick-add an experience-bank note while viewing a job.
+
+    Saves an ExperienceItem linked to this job (job_id set) so tailoring for this
+    role prioritizes it; it also lives in the central bank. HTMX swaps the panel
+    inline; a plain POST redirects back to the job.
+    """
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+
+    text = (raw_text or "").strip()
+    if len(text) < 8:
+        if _is_htmx(request):
+            return _render_experience_panel(
+                request, job,
+                error="Please write a little more — a few words about what you did.",
+            )
+        raise HTTPException(
+            400, "Please write a little more about the experience (a few words)."
+        )
+
+    item = ExperienceItem(
+        raw_text=text,
+        label=(label or "").strip() or None,
+        category=(category or "").strip() or None,
+        job_id=job_id,
+    )
+    try:
+        session.add(item)
+        session.commit()
+    except Exception as e:  # noqa: BLE001 - don't leak a 500 on DB write
+        session.rollback()
+        print(f"[experience] DB write failed for job {job_id}: {type(e).__name__}: {e}")
+        if _is_htmx(request):
+            return _render_experience_panel(
+                request, job, error="Couldn't save that note. Please try again.",
+            )
+        raise HTTPException(503, "Couldn't save that note. Please try again.")
+
+    if _is_htmx(request):
+        return _render_experience_panel(request, job, saved=True)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+
+def _render_experience_panel(
+    request: Request, job: Job, *, saved: bool = False, error: str = ""
+) -> HTMLResponse:
+    templates = request.app.state.templates
+    session = next(get_session())
+    try:
+        linked = list(session.exec(
+            select(ExperienceItem)
+            .where(ExperienceItem.job_id == job.id)
+            .order_by(ExperienceItem.created_at.desc())
+        ).all())
+    finally:
+        session.close()
+    return templates.TemplateResponse(
+        request,
+        "_experience_panel.html",
+        {"job": job, "linked_items": linked, "saved": saved, "error": error},
+    )
+
+
 @router.post("/{job_id}/score")
 def score(
     job_id: int,
@@ -659,6 +741,12 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
 
     estimate = (job.raw or {}).get("salary_estimate")
 
+    linked_items = list(session.exec(
+        select(ExperienceItem)
+        .where(ExperienceItem.job_id == job_id)
+        .order_by(ExperienceItem.created_at.desc())
+    ).all())
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
@@ -669,6 +757,9 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
             "estimate": estimate,
             "fmt_money": fmt_money,
             "position_pct": position_pct,
+            "linked_items": linked_items,
+            "saved": False,
+            "error": "",
         },
     )
 
@@ -734,10 +825,11 @@ def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResp
         except Exception as e:
             print(f"[tailor] description hydration failed: {e}")
 
+    experience_items = _load_experience_items(session)
     try:
-        tailored = tailor_resume(profile_dict, job)
+        tailored = tailor_resume(profile_dict, job, experience_items)
         diff = compute_diff(profile_dict, tailored)
-        cover = generate_cover_letter(profile_dict, job)
+        cover = generate_cover_letter(profile_dict, job, experience_items)
     except Exception as e:  # noqa: BLE001 - tailoring must never 500 the page
         session.rollback()
         print(f"[tailor] generation failed for job {job_id}: {type(e).__name__}: {e}")
