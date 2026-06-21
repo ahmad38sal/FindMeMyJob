@@ -9,77 +9,130 @@
     </h2>
 
     {% if job.salary_min or job.salary_max %}
-        {# Posted range — just display, no LLM call needed. #}
+        {# Posted range — show the number AND the meter. #}
         <p>
             <strong>{{ fmt_money(job.salary_min, job.currency) }}</strong>
             –
             <strong>{{ fmt_money(job.salary_max, job.currency) }}</strong>
-            <span class="muted">{{ job.currency }}</span>
+            <span class="muted">{{ job.currency }} · posted</span>
         </p>
-    {% elif estimate %}
-        {# LLM-estimated range. Render the meter. #}
-        {% set lo = estimate.market_min %}
-        {% set hi = estimate.market_max %}
-        {% set median_pct = position_pct(estimate.market_median, lo, hi) %}
-        {% set target_pct = position_pct(estimate.user_target, lo, hi) %}
+    {% endif %}
 
+    {% if salary and salary.scale_hi > salary.scale_lo %}
+        {# Unified meter. Renders for EVERY job — posted band, market estimate,
+           and/or fair-ask are positioned on one [scale_lo..scale_hi] axis. #}
         <div class="salary-meter">
             <div class="meter-track">
-                <div class="meter-tick" style="left: {{ median_pct }}%"
-                     title="market median {{ fmt_money(estimate.market_median, estimate.currency) }}"></div>
-                <div class="meter-marker" style="left: {{ target_pct }}%"
-                     title="your target {{ fmt_money(estimate.user_target, estimate.currency) }}">
-                    <span class="meter-marker-label">you · {{ fmt_money(estimate.user_target, estimate.currency) }}</span>
-                </div>
+                {% if salary.posted_lo_pct is not none and salary.posted_hi_pct is not none %}
+                    <div class="meter-band"
+                         style="left: {{ salary.posted_lo_pct }}%; width: {{ (salary.posted_hi_pct - salary.posted_lo_pct) }}%"
+                         title="posted range {{ fmt_money(salary.posted_min, salary.currency) }}–{{ fmt_money(salary.posted_max, salary.currency) }}"></div>
+                {% endif %}
+                {% if salary.median_pct is not none %}
+                    <div class="meter-tick" style="left: {{ salary.median_pct }}%"
+                         title="market median {{ fmt_money(salary.market_median, salary.currency) }}"></div>
+                {% endif %}
+                {% if salary.ask_target_pct is not none %}
+                    <div class="meter-marker meter-marker-ask" style="left: {{ salary.ask_target_pct }}%"
+                         title="your fair ask {{ fmt_money(salary.ask_target, salary.currency) }}">
+                        <span class="meter-marker-label">ask · {{ fmt_money(salary.ask_target, salary.currency) }}</span>
+                    </div>
+                {% endif %}
             </div>
             <div class="meter-labels">
-                <span class="meter-label-min">{{ fmt_money(lo, estimate.currency) }}</span>
-                <span class="meter-label-median">median {{ fmt_money(estimate.market_median, estimate.currency) }}</span>
-                <span class="meter-label-max">{{ fmt_money(hi, estimate.currency) }}</span>
+                <span class="meter-label-min">{{ fmt_money(salary.scale_lo, salary.currency) }}</span>
+                {% if salary.has_posted %}
+                    <span class="meter-label-median">posted {{ fmt_money(salary.posted_min, salary.currency) }}–{{ fmt_money(salary.posted_max, salary.currency) }}</span>
+                {% elif salary.median_pct is not none %}
+                    <span class="meter-label-median">median {{ fmt_money(salary.market_median, salary.currency) }}</span>
+                {% endif %}
+                <span class="meter-label-max">{{ fmt_money(salary.scale_hi, salary.currency) }}</span>
             </div>
         </div>
 
+        {# Legend distinguishing the three signals shown on the meter. #}
+        <div class="salary-legend muted">
+            {% if salary.has_posted %}<span class="legend-item"><span class="swatch swatch-posted"></span>Posted range</span>{% endif %}
+            {% if salary.has_estimate %}<span class="legend-item"><span class="swatch swatch-market"></span>Market estimate</span>{% endif %}
+            {% if salary.ask_target_pct is not none %}<span class="legend-item"><span class="swatch swatch-ask"></span>Your fair ask</span>{% endif %}
+        </div>
+    {% endif %}
+
+    {# ---- Fair ask recommendation ---- #}
+    {% if fair_ask and salary and salary.ask_target %}
+        <div class="fair-ask">
+            <p class="fair-ask-headline">
+                Your fair ask:
+                <strong>{{ fmt_money(salary.ask_low, salary.currency) }}</strong>
+                –
+                <strong>{{ fmt_money(salary.ask_high, salary.currency) }}</strong>
+                <span class="muted">· aim for {{ fmt_money(salary.ask_target, salary.currency) }}</span>
+            </p>
+            {% if salary.ask_rationale %}
+                <p class="muted fair-ask-rationale">{{ salary.ask_rationale }}</p>
+            {% endif %}
+            <p class="muted" style="font-size: 12px; margin: 4px 0 0 0">
+                {% if salary.ask_position == "upper_band" %}Positioned in the upper part of the posted band.
+                {% elif salary.ask_position == "mid_band" %}Positioned in the middle of the posted band.
+                {% elif salary.ask_position == "low_in_band" %}Positioned conservatively in the posted band.
+                {% elif salary.ask_position == "above_band" %}Above the posted band — you may be over-leveled for this role.
+                {% elif salary.ask_position == "below_band" %}Below the posted band — treat this as a stretch role.
+                {% else %}Based on market context (no salary was posted).
+                {% endif %}
+                {% if salary.ask_source == "heuristic" %}<em>(rule-of-thumb — LLM unavailable)</em>{% endif %}
+            </p>
+            <form hx-post="/jobs/{{ job.id }}/fair-ask"
+                  hx-target="#salary-panel"
+                  hx-swap="outerHTML"
+                  hx-disabled-elt="find button"
+                  style="margin-top: 8px">
+                <button type="submit" class="btn small">Refresh ask</button>
+                <span class="htmx-indicator muted small">recomputing…</span>
+            </form>
+        </div>
+    {% endif %}
+
+    {# ---- Market estimate context ---- #}
+    {% if estimate %}
         <p class="salary-target-source muted">
             {% if estimate.user_target_source == "profile" %}
-                Your target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is pulled from your profile preferences.
+                Market estimate target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is pulled from your profile preferences.
             {% else %}
-                Your target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is estimated from your work history — set
+                Market estimate target ({{ fmt_money(estimate.user_target, estimate.currency) }}) is estimated from your work history — set
                 <a href="/profile">preferences.salary_target</a> to override.
             {% endif %}
         </p>
-
         {% if estimate.rationale %}
             <details class="salary-rationale">
-                <summary>How was this estimated?</summary>
+                <summary>How was the market range estimated?</summary>
                 <p class="muted">{{ estimate.rationale }}</p>
                 <p class="muted" style="font-size: 13px">
-                    <strong>Caveat:</strong> this is a Claude estimate from training-data patterns
+                    <strong>Caveat:</strong> this is an LLM estimate from training-data patterns
                     (public postings, mandatory-disclosure states, Levels.fyi crawl, comp surveys).
                     It is <em>not</em> a query against a live salary database. Use as a sanity-check,
                     not as a negotiation source. {% if estimate.generated_at %}Generated {{ estimate.generated_at }}.{% endif %}
                 </p>
             </details>
         {% endif %}
-
         <form hx-post="/jobs/{{ job.id }}/estimate-salary"
               hx-target="#salary-panel"
               hx-swap="outerHTML"
               hx-disabled-elt="find button"
               style="margin-top: 8px">
-            <button type="submit" class="btn small">Re-estimate</button>
+            <button type="submit" class="btn small">Re-estimate market range</button>
             <span class="htmx-indicator muted small">estimating…</span>
         </form>
-    {% else %}
-        {# No posted salary, no cached estimate yet. Offer to generate one. #}
-        <p class="muted">This posting didn't list a salary.</p>
+    {% elif not (job.salary_min or job.salary_max) %}
+        {# No posted salary and no market estimate yet. Offer to generate one. #}
+        <p class="muted" style="margin-top: 10px">This posting didn't list a salary — the fair ask above is based on your profile and market context. Generate a market range to refine it.</p>
         <form hx-post="/jobs/{{ job.id }}/estimate-salary"
               hx-target="#salary-panel"
               hx-swap="outerHTML"
               hx-disabled-elt="find button">
-            <button type="submit" class="btn">Estimate range</button>
+            <button type="submit" class="btn">Estimate market range</button>
             <span class="htmx-indicator muted small">estimating…</span>
             <span class="muted" style="font-size: 13px; margin-left: 8px">
-                Claude-generated estimate from training-data patterns. Not a live database.
+                LLM-generated estimate from training-data patterns. Not a live database.
             </span>
         </form>
     {% endif %}

@@ -299,6 +299,52 @@ ul.claimed-skills li:last-child { border-bottom: none; }
     font-weight: 600;
     color: var(--fg);
 }
+/* Posted-range band drawn on the meter track. */
+.meter-band {
+    position: absolute;
+    top: 0;
+    height: 10px;
+    background: rgba(37, 99, 235, 0.32);
+    border: 1px solid rgba(37, 99, 235, 0.55);
+    border-radius: 999px;
+    min-width: 2px;
+    box-sizing: border-box;
+}
+/* Fair-ask marker uses a distinct accent so it reads apart from the band. */
+.meter-marker-ask {
+    background: #16a34a;
+}
+.meter-marker-ask::after { background: #16a34a; }
+.meter-marker-ask .meter-marker-label {
+    background: #16a34a;
+}
+.salary-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    margin: 4px 0 0 0;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.swatch {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+}
+.swatch-posted { background: rgba(37, 99, 235, 0.45); border: 1px solid rgba(37, 99, 235, 0.7); }
+.swatch-market { background: #1f2937; border-radius: 1px; width: 3px; height: 12px; }
+.swatch-ask { background: #16a34a; border-radius: 50%; }
+.fair-ask {
+    margin: 16px 0 4px 0;
+    padding: 12px 14px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+}
+.fair-ask-headline { margin: 0; font-size: 15px; }
+.fair-ask-rationale { margin: 6px 0 0 0; font-size: 13px; }
+
 .salary-target-source { font-size: 13px; margin: 8px 0 0 0; }
 .salary-rationale { margin: 12px 0 0 0; }
 .salary-rationale summary {

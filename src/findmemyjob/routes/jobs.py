@@ -23,7 +23,14 @@ from findmemyjob.models import (
     ResumeKind,
 )
 from findmemyjob.pdf import save_resume_pdf
-from findmemyjob.salary import SalaryEstimate, estimate_salary, fmt_money, position_pct
+from findmemyjob.salary import (
+    SalaryEstimate,
+    build_salary_view,
+    compute_fair_ask,
+    estimate_salary,
+    fmt_money,
+    position_pct,
+)
 from findmemyjob.sources import directory as directory_seed
 from findmemyjob.sources import generic_url as generic_source
 from findmemyjob.sources import greenhouse as greenhouse_source
@@ -75,19 +82,58 @@ def _render_match_partial(
     )
 
 
-def _render_salary_partial(request: Request, job: Job) -> HTMLResponse:
+def _ensure_fair_ask(session: Session, job: Job, *, force: bool = False) -> Dict:
+    """Return the cached fair-ask for `job`, computing+caching it once if absent.
+
+    Computed lazily so the meter has a recommendation on first view without a
+    dedicated user action. Cached on `job.raw["fair_ask"]`; `force=True` (the
+    refresh button) recomputes. Never raises — degrades to the heuristic.
+    """
+    raw = job.raw or {}
+    cached = raw.get("fair_ask")
+    if cached and not force:
+        return cached
+
+    profile = session.get(Profile, 1)
+    profile_dict = profile.model_dump() if profile else {}
+    estimate = raw.get("salary_estimate")
+    ask = compute_fair_ask(profile_dict, job, estimate)
+    cached = {
+        **ask.model_dump(),
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
+    }
+    new_raw = dict(raw)
+    new_raw["fair_ask"] = cached
+    job.raw = new_raw
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    return cached
+
+
+def _salary_context(session: Session, job: Job) -> Dict:
+    """Template vars for the salary panel — estimate, fair-ask, and the view."""
+    raw = job.raw or {}
+    estimate = raw.get("salary_estimate")
+    fair_ask = _ensure_fair_ask(session, job)
+    view = build_salary_view(job, estimate, fair_ask)
+    return {
+        "job": job,
+        "estimate": estimate,
+        "fair_ask": fair_ask,
+        "salary": view,
+        "fmt_money": fmt_money,
+        "position_pct": position_pct,
+    }
+
+
+def _render_salary_partial(request: Request, job: Job, session: Session) -> HTMLResponse:
     """Render the salary panel as a standalone fragment for HTMX swaps."""
     templates = request.app.state.templates
-    estimate = (job.raw or {}).get("salary_estimate")
     return templates.TemplateResponse(
         request,
         "_salary_panel.html",
-        {
-            "job": job,
-            "estimate": estimate,
-            "fmt_money": fmt_money,
-            "position_pct": position_pct,
-        },
+        _salary_context(session, job),
     )
 
 
@@ -739,24 +785,35 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
     profile = session.get(Profile, 1)
     work_history = profile.work_history if profile else []
 
-    estimate = (job.raw or {}).get("salary_estimate")
-
     linked_items = list(session.exec(
         select(ExperienceItem)
         .where(ExperienceItem.job_id == job_id)
         .order_by(ExperienceItem.created_at.desc())
     ).all())
 
+    # Salary panel context (estimate + lazily-cached fair-ask + meter view).
+    # Defensive: a salary glitch must never take down the whole detail page.
+    try:
+        salary_ctx = _salary_context(session, job)
+    except Exception as e:  # noqa: BLE001
+        print(f"[job_detail] salary context failed: {e}")
+        salary_ctx = {
+            "job": job,
+            "estimate": (job.raw or {}).get("salary_estimate"),
+            "fair_ask": None,
+            "salary": build_salary_view(job, (job.raw or {}).get("salary_estimate"), None),
+            "fmt_money": fmt_money,
+            "position_pct": position_pct,
+        }
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "job_detail.html",
         {
+            **salary_ctx,
             "job": job, "app": app, "resume": resume,
             "work_history": work_history,
-            "estimate": estimate,
-            "fmt_money": fmt_money,
-            "position_pct": position_pct,
             "linked_items": linked_items,
             "saved": False,
             "error": "",
@@ -797,13 +854,46 @@ def estimate_salary_route(
         **estimate.model_dump(),
         "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
     }
+    # Estimate changed — drop the cached fair-ask so it recomputes against it.
+    raw.pop("fair_ask", None)
     job.raw = raw
     session.add(job)
     session.commit()
     session.refresh(job)
 
     if _is_htmx(request):
-        return _render_salary_partial(request, job)
+        return _render_salary_partial(request, job, session)
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+
+@router.post("/{job_id}/fair-ask")
+def fair_ask_route(
+    job_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Recompute the recommended fair ask (the "Refresh ask" button).
+
+    Hydrates the JD if missing for better signal, forces a fresh LLM/heuristic
+    computation, and re-renders the salary panel. Never 500s.
+    """
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+
+    if not job.description:
+        try:
+            hydrate_job_description(job)
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+        except Exception as e:  # noqa: BLE001
+            print(f"[fair-ask] description hydration failed: {e}")
+
+    _ensure_fair_ask(session, job, force=True)
+
+    if _is_htmx(request):
+        return _render_salary_partial(request, job, session)
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
