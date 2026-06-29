@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Interview · {{ job.title }} — {{ job.company }}{% endblock %}
+{% block content %}
+<a href="/jobs/{{ job.id }}">← Back to job</a>
+
+<div class="page-head">
+    <h1 style="margin-bottom:2px">Mock interview</h1>
+</div>
+<p class="muted">{{ job.title }} · {{ job.company }} · session #{{ isession.id }}</p>
+
+{# Round progress #}
+<div class="round-progress">
+    {% for r in round_order %}
+        <span class="round-chip
+            {% if r == isession.current_round and isession.status != 'completed' %}round-chip-active{% endif %}
+            {% if isession.status == 'completed' %}round-chip-done{% endif %}">
+            {{ round_labels.get(r, r) }}
+        </span>
+    {% endfor %}
+</div>
+
+{# Voice controls — feature-detected; hidden by JS when unsupported. #}
+<div class="voice-bar" id="voice-bar" hidden>
+    <label class="voice-toggle">
+        <input type="checkbox" id="tts-toggle"> Read questions aloud
+    </label>
+    <span class="muted" style="font-size:12px">Voice uses your browser's speech engine — typing always works.</span>
+</div>
+
+<div class="chat-log" id="chat-log">
+    {% for t in turns %}
+        {% if t.role == "interviewer" %}
+            <div class="bubble-row bubble-row-left">
+                <div class="bubble bubble-interviewer" data-speak="{{ t.content }}">{{ t.content }}</div>
+            </div>
+        {% else %}
+            <div class="bubble-row bubble-row-right">
+                <div class="bubble bubble-candidate">{{ t.content }}</div>
+            </div>
+            {% if t.feedback %}
+                <div class="inline-feedback">
+                    <span class="fb-tag">Coaching</span>
+                    {% if t.feedback.score is defined %}<span class="fb-score">{{ t.feedback.score }}/100</span>{% endif %}
+                    {% if t.feedback.worked %}<p><strong>Worked:</strong> {{ t.feedback.worked }}</p>{% endif %}
+                    {% if t.feedback.improve %}<p><strong>Improve:</strong> {{ t.feedback.improve }}</p>{% endif %}
+                    {% if t.feedback.stronger %}<p><strong>Stronger:</strong> {{ t.feedback.stronger }}</p>{% endif %}
+                </div>
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+</div>
+
+{# Debrief (shown when the session is already complete) #}
+{% if isession.status == "completed" and isession.debrief %}
+    {% set debrief = isession.debrief %}
+    {% include "_interview_debrief.html" %}
+{% endif %}
+
+{# Answer form — hidden once the interview completes. #}
+<form id="answer-form"
+      class="answer-form{% if isession.status == 'completed' %} is-hidden{% endif %}"
+      hx-post="/interview/{{ isession.id }}/answer"
+      hx-target="#chat-log"
+      hx-swap="beforeend"
+      hx-disabled-elt="find button">
+    <textarea id="answer-box" name="answer" rows="3" class="query-input"
+              placeholder="Type your answer… (or use the mic)"
+              style="width:100%; resize:vertical; font-family:inherit"></textarea>
+    <div class="answer-controls">
+        <button type="button" id="mic-btn" class="btn" hidden>🎤 Speak</button>
+        <button type="submit" class="btn primary">Send answer</button>
+        <span class="htmx-indicator muted small">interviewer is thinking…</span>
+    </div>
+</form>
+
+<script>
+(function () {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var canTTS = "speechSynthesis" in window;
+    var voiceBar = document.getElementById("tts-toggle") ? document.getElementById("voice-bar") : null;
+    var ttsToggle = document.getElementById("tts-toggle");
+    var micBtn = document.getElementById("mic-btn");
+    var answerBox = document.getElementById("answer-box");
+    var log = document.getElementById("chat-log");
+
+    // Show the voice bar only if at least one capability exists.
+    if (voiceBar && (canTTS || SR)) { voiceBar.hidden = false; }
+    if (!canTTS && ttsToggle) { ttsToggle.parentElement.style.display = "none"; }
+
+    function ttsOn() { return ttsToggle && ttsToggle.checked && canTTS; }
+
+    function speak(text) {
+        if (!ttsOn() || !text) return;
+        try {
+            window.speechSynthesis.cancel();
+            var u = new SpeechSynthesisUtterance(text);
+            u.rate = 1.0; u.pitch = 1.0;
+            window.speechSynthesis.speak(u);
+        } catch (e) { /* non-fatal */ }
+    }
+
+    function scrollDown() { if (log) log.scrollTop = log.scrollHeight; window.scrollTo(0, document.body.scrollHeight); }
+
+    // Speech-to-text: dictate into the answer box.
+    if (SR && micBtn) {
+        micBtn.hidden = false;
+        var rec = new SR();
+        rec.continuous = false; rec.interimResults = false; rec.lang = "en-US";
+        var listening = false;
+        micBtn.addEventListener("click", function () {
+            if (listening) { try { rec.stop(); } catch (e) {} return; }
+            try { rec.start(); } catch (e) {}
+        });
+        rec.onstart = function () { listening = true; micBtn.textContent = "● Listening…"; micBtn.classList.add("mic-live"); };
+        rec.onend = function () { listening = false; micBtn.textContent = "🎤 Speak"; micBtn.classList.remove("mic-live"); };
+        rec.onerror = function () { listening = false; micBtn.textContent = "🎤 Speak"; micBtn.classList.remove("mic-live"); };
+        rec.onresult = function (ev) {
+            var said = "";
+            for (var i = 0; i < ev.results.length; i++) { said += ev.results[i][0].transcript; }
+            answerBox.value = (answerBox.value ? answerBox.value + " " : "") + said;
+            answerBox.focus();
+        };
+    }
+
+    // After each HTMX exchange: clear the box, speak the new question, scroll,
+    // and hide the form if the interview just completed.
+    document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (answerBox) answerBox.value = "";
+        var bubbles = log ? log.querySelectorAll(".bubble-interviewer[data-speak]") : [];
+        if (bubbles.length) {
+            var last = bubbles[bubbles.length - 1];
+            if (!last.dataset.spoken) { speak(last.getAttribute("data-speak")); last.dataset.spoken = "1"; }
+        }
+        if (document.querySelector("[data-interview-complete]")) {
+            var f = document.getElementById("answer-form");
+            if (f) f.classList.add("is-hidden");
+        }
+        scrollDown();
+    });
+
+    scrollDown();
+})();
+</script>
+{% endblock %}

@@ -154,6 +154,39 @@ class ExperienceItem(SQLModel, table=True):
     updated_at: datetime = SQLField(default_factory=datetime.utcnow)
 
 
+class InterviewSession(SQLModel, table=True):
+    """One mock-interview run for a specific job.
+
+    Additive table (new in this release). Flows through round types in order:
+    recruiter -> behavioral -> technical -> company -> (debrief). `config`
+    holds the round plan + per-round question budget; `debrief` is the final
+    summary written when the interview completes.
+    """
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    job_id: int = SQLField(foreign_key="job.id", index=True)
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+    status: str = SQLField(default="active")          # active | completed
+    current_round: str = SQLField(default="recruiter")  # recruiter|behavioral|technical|company
+    config: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
+    debrief: Optional[Dict[str, Any]] = SQLField(default=None, sa_column=Column(JSON))
+
+
+class InterviewTurn(SQLModel, table=True):
+    """A single message in an interview transcript.
+
+    `role` is "interviewer" or "candidate". For candidate turns, `feedback`
+    holds the inline coaching note (what worked / improve / stronger reframe /
+    score) produced right after the answer.
+    """
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    session_id: int = SQLField(foreign_key="interviewsession.id", index=True)
+    role: str                                          # interviewer | candidate
+    round: str                                         # recruiter|behavioral|technical|company
+    content: str = ""
+    feedback: Optional[Dict[str, Any]] = SQLField(default=None, sa_column=Column(JSON))
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
 class SearchProfile(SQLModel, table=True):
     """Singleton (id=1) — the LLM-derived 'ideal role' search profile.
 

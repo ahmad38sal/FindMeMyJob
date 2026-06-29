@@ -1,0 +1,52 @@
+{# Expects `debrief` in context. Used both inline (completed page) and in the
+   exchange fragment when the interview finishes. #}
+<section class="panel debrief" id="debrief">
+    <h2>Debrief
+        {% if debrief.overall_score is defined %}
+            <span class="debrief-overall">{{ debrief.overall_score }}/100</span>
+        {% endif %}
+    </h2>
+    {% if debrief.summary %}<p>{{ debrief.summary }}</p>{% endif %}
+
+    {% if debrief.round_scores %}
+    <h3>By round</h3>
+    <ul class="debrief-rounds">
+        {% for r in debrief.round_scores %}
+        <li>
+            <span class="debrief-round-name">{{ r.label or r.round }}</span>
+            <span class="badge">{{ r.score }}/100</span>
+            {% if r.note %}<span class="muted">— {{ r.note }}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="debrief-cols">
+        {% if debrief.strengths %}
+        <div>
+            <h3>Strengths</h3>
+            <ul>{% for s in debrief.strengths %}<li>{{ s }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if debrief.gaps %}
+        <div>
+            <h3>Gaps</h3>
+            <ul>{% for g in debrief.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if debrief.better_answers %}
+    <h3>Stronger answers to practice</h3>
+    {% for ba in debrief.better_answers %}
+    <div class="better-answer">
+        <p class="ba-q"><strong>Q:</strong> {{ ba.question }}</p>
+        <p class="ba-r"><strong>Try:</strong> {{ ba.reframe }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <form action="/interview/start/{{ job.id }}" method="post" style="margin-top:12px">
+        <button type="submit" class="btn">Run another interview</button>
+    </form>
+</section>

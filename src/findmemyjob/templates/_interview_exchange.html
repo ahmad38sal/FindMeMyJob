@@ -1,0 +1,25 @@
+{# Appended to #chat-log after a candidate answer (HTMX beforeend). #}
+<div class="bubble-row bubble-row-right">
+    <div class="bubble bubble-candidate">{{ candidate_turn.content }}</div>
+</div>
+{% if candidate_turn.feedback %}
+<div class="inline-feedback">
+    <span class="fb-tag">Coaching</span>
+    {% if candidate_turn.feedback.score is defined %}<span class="fb-score">{{ candidate_turn.feedback.score }}/100</span>{% endif %}
+    {% if candidate_turn.feedback.worked %}<p><strong>Worked:</strong> {{ candidate_turn.feedback.worked }}</p>{% endif %}
+    {% if candidate_turn.feedback.improve %}<p><strong>Improve:</strong> {{ candidate_turn.feedback.improve }}</p>{% endif %}
+    {% if candidate_turn.feedback.stronger %}<p><strong>Stronger:</strong> {{ candidate_turn.feedback.stronger }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if interviewer_turn %}
+<div class="bubble-row bubble-row-left">
+    <div class="bubble bubble-interviewer" data-speak="{{ interviewer_turn.content }}">{{ interviewer_turn.content }}</div>
+</div>
+{% endif %}
+
+{% if debrief %}
+    {# Marks the interview complete so the page JS hides the answer form. #}
+    <div data-interview-complete hidden></div>
+    {% include "_interview_debrief.html" %}
+{% endif %}

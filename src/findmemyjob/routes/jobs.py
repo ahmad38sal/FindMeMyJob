@@ -17,6 +17,7 @@ from findmemyjob.models import (
     ApplicationStatus,
     ApplyMode,
     ExperienceItem,
+    InterviewSession,
     Job,
     Profile,
     Resume,
@@ -791,6 +792,12 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
         .order_by(ExperienceItem.created_at.desc())
     ).all())
 
+    interview_sessions = list(session.exec(
+        select(InterviewSession)
+        .where(InterviewSession.job_id == job_id)
+        .order_by(InterviewSession.id.desc())
+    ).all())
+
     # Salary panel context (estimate + lazily-cached fair-ask + meter view).
     # Defensive: a salary glitch must never take down the whole detail page.
     try:
@@ -815,6 +822,7 @@ def job_detail(job_id: int, request: Request, session: Session = Depends(get_ses
             "job": job, "app": app, "resume": resume,
             "work_history": work_history,
             "linked_items": linked_items,
+            "interview_sessions": interview_sessions,
             "saved": False,
             "error": "",
         },

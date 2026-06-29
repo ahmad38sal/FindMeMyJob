@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from findmemyjob.config import settings
 from findmemyjob.db import init_db
-from findmemyjob.routes import applications, ext, home, jobs, profile
+from findmemyjob.routes import applications, ext, home, interview, jobs, profile
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
@@ -48,6 +48,7 @@ app.include_router(home.router)
 app.include_router(profile.router, prefix="/profile", tags=["profile"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["applications"])
+app.include_router(interview.router, prefix="/interview", tags=["interview"])
 app.include_router(ext.router, prefix="/api/ext", tags=["ext"])
 
 

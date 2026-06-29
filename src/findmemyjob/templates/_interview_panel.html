@@ -1,0 +1,31 @@
+<section class="panel" id="interview-panel">
+    <h2>Interview Prepper</h2>
+    <p class="muted" style="font-size:13px; max-width:62ch">
+        Run a realistic mock interview tailored to <strong>{{ job.title }}</strong>
+        at <strong>{{ job.company }}</strong> — a recruiter screen, behavioral
+        (STAR) questions drawing on your experience bank, role/technical depth,
+        and company fit. You get inline coaching after every answer and a full
+        debrief at the end. Voice optional; typing always works.
+    </p>
+    <form action="/interview/start/{{ job.id }}" method="post" style="margin-top:8px">
+        <button type="submit" class="btn primary">Prep for interview</button>
+    </form>
+
+    {% if interview_sessions %}
+    <h3 style="margin-top:14px">Past sessions</h3>
+    <ul class="job-list">
+        {% for s in interview_sessions %}
+        <li>
+            <a href="/interview/{{ s.id }}">Session #{{ s.id }}</a>
+            <span class="badge">{{ s.status }}</span>
+            {% if s.status == "completed" and s.debrief and s.debrief.overall_score is defined %}
+                <span class="muted">· overall {{ s.debrief.overall_score }}/100</span>
+            {% else %}
+                <span class="muted">· in progress ({{ s.current_round }})</span>
+            {% endif %}
+            <span class="muted" style="font-size:12px">· {{ s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "" }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
