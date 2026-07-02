@@ -5,7 +5,7 @@
     <h1>Profile</h1>
     <span style="display:flex; gap:8px">
         <a href="/profile/experience" class="btn">Experience bank</a>
-        <a href="/profile/master-resume.pdf" class="btn" target="_blank">Download master PDF</a>
+        <a href="/profile/master-resume.pdf?v={{ profile.updated_at | string | urlencode }}" class="btn" target="_blank">Download master PDF</a>
     </span>
 </div>
 

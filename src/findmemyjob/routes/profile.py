@@ -13,7 +13,7 @@ from findmemyjob.config import settings
 from findmemyjob.db import get_session
 from findmemyjob.importing import import_resume
 from findmemyjob.models import ExperienceItem, Job, Profile
-from findmemyjob.pdf import save_resume_pdf
+from findmemyjob.pdf import PDF_NO_CACHE_HEADERS, save_resume_pdf
 from findmemyjob.search_strategy import suggest_search_queries
 
 router = APIRouter()
@@ -385,7 +385,8 @@ def download_master_pdf(session: Session = Depends(get_session)) -> FileResponse
         filename_hint="master",
     )
     name = (p.get("contact") or {}).get("name", "resume").replace(" ", "_")
-    return FileResponse(pdf_path, media_type="application/pdf", filename=f"{name}-master.pdf")
+    return FileResponse(pdf_path, media_type="application/pdf",
+                        filename=f"{name}-master.pdf", headers=PDF_NO_CACHE_HEADERS)
 
 
 @router.post("/external/save")

@@ -23,7 +23,7 @@ from findmemyjob.models import (
     Resume,
     ResumeKind,
 )
-from findmemyjob.pdf import save_resume_pdf
+from findmemyjob.pdf import PDF_NO_CACHE_HEADERS, save_resume_pdf
 from findmemyjob.salary import (
     SalaryEstimate,
     build_salary_view,
@@ -1009,7 +1009,8 @@ def download_tailored_pdf(job_id: int, session: Session = Depends(get_session)) 
     job = session.get(Job, job_id)
     safe_company = (job.company if job else "resume").replace(" ", "_")
     download_name = f"resume-{safe_company}-{job_id}.pdf"
-    return FileResponse(resume.pdf_path, media_type="application/pdf", filename=download_name)
+    return FileResponse(resume.pdf_path, media_type="application/pdf",
+                        filename=download_name, headers=PDF_NO_CACHE_HEADERS)
 
 
 def _tailored_resume_for_job(session: Session, job_id: int) -> Optional[Resume]:

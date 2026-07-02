@@ -22,6 +22,14 @@ from findmemyjob.config import settings
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _jinja = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
 
+# Resume PDFs are regenerated in place after a manual edit; the download URL is
+# stable, so without these the browser serves a stale cached copy.
+PDF_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 
 def _render_html(
     *,

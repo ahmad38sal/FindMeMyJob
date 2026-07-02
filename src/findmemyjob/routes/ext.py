@@ -23,6 +23,7 @@ from findmemyjob.config import settings
 from findmemyjob.db import get_session
 from findmemyjob.llm import llm
 from findmemyjob.matching import _strip_code_fence
+from findmemyjob.pdf import PDF_NO_CACHE_HEADERS
 from findmemyjob.models import (
     Application,
     ApplicationStatus,
@@ -359,6 +360,7 @@ def tailored_resume_pdf(
         resume.pdf_path,
         media_type="application/pdf",
         filename=f"resume-{safe_company}-{job_id}.pdf",
+        headers=PDF_NO_CACHE_HEADERS,
     )
 
 

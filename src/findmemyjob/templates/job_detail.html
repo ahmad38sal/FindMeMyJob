@@ -33,7 +33,7 @@
             {% if resume.manually_edited %}<span class="badge" style="margin-left:6px">Manually edited</span>{% endif %}
         </p>
         <p style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <a href="/jobs/{{ job.id }}/resume.pdf" class="btn primary" target="_blank">Download tailored PDF</a>
+            <a href="/jobs/{{ job.id }}/resume.pdf?v={{ (resume.pdf_path or resume.created_at) | string | urlencode }}" class="btn primary" target="_blank">Download tailored PDF</a>
             <a href="/jobs/{{ job.id }}/resume/edit" class="btn">Edit resume text</a>
         </p>
         <form action="/jobs/{{ job.id }}/tailor" method="post">

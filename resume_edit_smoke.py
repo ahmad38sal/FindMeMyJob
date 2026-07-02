@@ -207,6 +207,29 @@ with Session(engine) as s:
        "text edit saved despite PDF failure")
     ok(r4.pdf_path == pdf_before_path, "pdf_path unchanged when regen fails")
 
+# ---------------------------------------------------------------------------
+# 5. PDF download route sends no-cache headers (so edits aren't stale-cached)
+# ---------------------------------------------------------------------------
+print("\n[download no-cache headers]")
+real_pdf = os.path.join(_tmpdir, "served.pdf")
+with open(real_pdf, "wb") as fh:
+    fh.write(b"%PDF-1.4 dummy")
+with Session(engine) as s:
+    rr = s.get(Resume, resume_id)
+    rr.pdf_path = real_pdf
+    s.add(rr)
+    s.commit()
+r = client.get(f"/jobs/{job_id}/resume.pdf")
+ok(r.status_code == 200, f"GET resume.pdf -> {r.status_code}")
+cc = r.headers.get("cache-control", "")
+ok("no-store" in cc and "no-cache" in cc and "must-revalidate" in cc and "max-age=0" in cc,
+   f"Cache-Control no-store present ({cc!r})")
+ok(r.headers.get("pragma") == "no-cache", "Pragma: no-cache present")
+ok(r.headers.get("expires") == "0", "Expires: 0 present")
+# Extra query param must still serve fine (cache-bust ?v=...).
+r = client.get(f"/jobs/{job_id}/resume.pdf?v=abc123")
+ok(r.status_code == 200, "resume.pdf still serves with cache-bust query param")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")
