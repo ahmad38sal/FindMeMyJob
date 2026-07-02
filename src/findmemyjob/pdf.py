@@ -11,6 +11,8 @@ Public functions:
 """
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -63,21 +65,9 @@ def _render_html(
     )
 
 
-def render_resume_pdf(
-    *,
-    contact: Dict[str, Any],
-    summary: str = "",
-    work_history: Optional[List[Dict[str, Any]]] = None,
-    education: Optional[List[Dict[str, Any]]] = None,
-    skills: Optional[List[Dict[str, Any]]] = None,
-    certifications: Optional[List[Dict[str, Any]]] = None,
-) -> bytes:
+def _html_to_pdf_bytes(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
-    html = _render_html(
-        contact=contact, summary=summary, work_history=work_history,
-        education=education, skills=skills, certifications=certifications,
-    )
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
@@ -89,6 +79,31 @@ def render_resume_pdf(
         )
         browser.close()
     return pdf_bytes
+
+
+def render_resume_pdf(
+    *,
+    contact: Dict[str, Any],
+    summary: str = "",
+    work_history: Optional[List[Dict[str, Any]]] = None,
+    education: Optional[List[Dict[str, Any]]] = None,
+    skills: Optional[List[Dict[str, Any]]] = None,
+    certifications: Optional[List[Dict[str, Any]]] = None,
+) -> bytes:
+    html = _render_html(
+        contact=contact, summary=summary, work_history=work_history,
+        education=education, skills=skills, certifications=certifications,
+    )
+    # Playwright's sync API refuses to run inside a live asyncio loop. Sync
+    # FastAPI routes run in a threadpool (no loop) and are fine, but async
+    # routes (e.g. the manual-edit save) call us on the loop thread — so when a
+    # loop is running, offload the blocking render to a worker thread.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return _html_to_pdf_bytes(html)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_html_to_pdf_bytes, html).result()
 
 
 def save_resume_pdf(

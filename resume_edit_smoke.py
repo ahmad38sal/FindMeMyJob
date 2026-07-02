@@ -314,6 +314,39 @@ r = client.get(f"/jobs/{job_id}/resume.pdf")
 ok(r.status_code == 200, "second download still 200")
 ok(pdf_calls["count"] == pdf_before, "no needless regen when file already exists")
 
+# ---------------------------------------------------------------------------
+# 8. Renderer is safe to call from an async route (sync Playwright would else
+#    raise "Sync API inside asyncio loop"). It must offload to a worker thread.
+# ---------------------------------------------------------------------------
+print("\n[renderer offloads under a running event loop]")
+import asyncio  # noqa: E402
+import threading  # noqa: E402
+import findmemyjob.pdf as pdf_mod  # noqa: E402
+
+_seen = {}
+_orig_html_to_pdf = pdf_mod._html_to_pdf_bytes
+
+
+def _spy(html):
+    _seen["main"] = threading.current_thread() is threading.main_thread()
+    return b"%PDF-1.4 x"
+
+
+pdf_mod._html_to_pdf_bytes = _spy
+try:
+    b = pdf_mod.render_resume_pdf(contact={}, summary="s")
+    ok(b == b"%PDF-1.4 x" and _seen.get("main") is True,
+       "sync context renders inline on the main thread")
+
+    async def _call():
+        return pdf_mod.render_resume_pdf(contact={}, summary="s")
+
+    b = asyncio.run(_call())
+    ok(b == b"%PDF-1.4 x" and _seen.get("main") is False,
+       "async context offloads render to a worker thread (no asyncio-loop crash)")
+finally:
+    pdf_mod._html_to_pdf_bytes = _orig_html_to_pdf
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")
