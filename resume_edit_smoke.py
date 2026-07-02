@@ -12,6 +12,7 @@ Exercises the inline full-text editor for an already-tailored resume:
 
 Run with:  OPENAI_API_KEY=dummy .venv/bin/python resume_edit_smoke.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -229,6 +230,61 @@ ok(r.headers.get("expires") == "0", "Expires: 0 present")
 # Extra query param must still serve fine (cache-bust ?v=...).
 r = client.get(f"/jobs/{job_id}/resume.pdf?v=abc123")
 ok(r.status_code == 200, "resume.pdf still serves with cache-bust query param")
+
+# ---------------------------------------------------------------------------
+# 6. Legacy string content (json.dumps'd into the JSON column) edits cleanly
+# ---------------------------------------------------------------------------
+print("\n[string-content resume repairs on edit]")
+with Session(engine) as s:
+    job2 = Job(source="pasted", source_id="edit|2", title="Backend Engineer",
+               company="StrCo", description="Own APIs.")
+    s.add(job2)
+    s.commit()
+    s.refresh(job2)
+    job2_id = job2.id
+    # Store content as a JSON STRING (the bug): round-trips back as str.
+    resume2 = Resume(kind=ResumeKind.tailored, job_id=job2_id,
+                     content=json.dumps(CONTENT),
+                     keywords_targeted=CONTENT["keywords_targeted"],
+                     pdf_path=f"{_tmpdir}/original2.pdf")
+    s.add(resume2)
+    s.commit()
+    s.refresh(resume2)
+    resume2_id = resume2.id
+    s.add(Application(job_id=job2_id, tailored_resume_id=resume2_id))
+    s.commit()
+    ok(isinstance(s.get(Resume, resume2_id).content, str),
+       "seeded resume content is a JSON string (reproduces the bug)")
+
+# GET editor must render the string content without erroring.
+r = client.get(f"/jobs/{job2_id}/resume/edit")
+ok(r.status_code == 200, f"GET editor on string content -> {r.status_code}")
+ok("Led migration to Kubernetes" in r.text, "string content decoded for editing")
+
+pdf_before = pdf_calls["count"]
+form2 = {
+    "summary": "Backend engineer, reliability focused.",
+    "wh_0_title": "Staff Engineer", "wh_0_company": "Acme",
+    "wh_0_location": "Remote", "wh_0_start": "2019", "wh_0_end": "2024",
+    "wh_0_bullets": "Led migration to GKE\nReduced costs by 30%",
+    "edu_0_school": "MIT", "edu_0_degree": "BS", "edu_0_field": "CS",
+    "edu_0_start": "2011", "edu_0_end": "2015", "edu_0_gpa": "3.9",
+    "edu_0_highlights": "Dean's list",
+    "skill_0_name": "Python", "skill_0_category": "Languages",
+}
+r = client.post(f"/jobs/{job2_id}/resume/edit", data=form2, follow_redirects=False)
+ok(r.status_code == 303, f"POST edit on string content -> {r.status_code} (no error)")
+ok(pdf_calls["count"] == pdf_before + 1, "PDF regenerated for string-content resume")
+with Session(engine) as s:
+    r6 = s.get(Resume, resume2_id)
+    ok(isinstance(r6.content, dict), "content is now a real dict (never a json string)")
+    ok(r6.content["summary"] == "Backend engineer, reliability focused.",
+       "edited summary persisted for repaired resume")
+    ok(r6.content["work_history"][0]["bullets"][0] == "Led migration to GKE",
+       "edited bullet persisted for repaired resume")
+    ok(r6.manually_edited is True, "manually_edited flag set on repaired resume")
+    ok(r6.pdf_path.endswith(".pdf") and "original2" not in r6.pdf_path,
+       "pdf_path regenerated for repaired resume")
 
 print("\n" + "=" * 40)
 if failures:

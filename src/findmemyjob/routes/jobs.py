@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List
 from urllib.parse import urlparse
@@ -1020,6 +1021,33 @@ def _tailored_resume_for_job(session: Session, job_id: int) -> Optional[Resume]:
     return session.get(Resume, app.tailored_resume_id)
 
 
+def _as_content_dict(raw) -> Dict:
+    """Normalize a Resume.content value to a dict, whatever shape it's stored in.
+
+    Most rows hold a proper dict, but a few legacy rows have ``content`` stored
+    as a JSON *string* (json.dumps written into the JSON column), which round-
+    trips back as ``str`` and breaks any ``.get()``/``dict()`` access. Parse the
+    string (and unwrap one extra layer of double-encoding) so callers always get
+    a dict; anything unparseable degrades to ``{}``.
+    """
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return {}
+        if isinstance(parsed, str):  # guard against nested double-encoding
+            try:
+                parsed = json.loads(parsed)
+            except (ValueError, TypeError):
+                return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 def _apply_manual_edits(content: Dict, form) -> Dict:
     """Overlay edited text fields onto a copy of the stored content.
 
@@ -1029,7 +1057,8 @@ def _apply_manual_edits(content: Dict, form) -> Dict:
     one-per-line textareas: blank lines are dropped so removing a line removes
     the bullet. Keys are matched positionally against the render-time order.
     """
-    edited = dict(content or {})
+    content = _as_content_dict(content)  # defense-in-depth: tolerate str content
+    edited = dict(content)
     edited["summary"] = (form.get("summary") or "").strip()
 
     new_wh = []
@@ -1101,7 +1130,7 @@ def edit_resume_form(
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request, "resume_edit.html",
-        {"job": job, "resume": resume, "content": resume.content or {}, "error": None},
+        {"job": job, "resume": resume, "content": _as_content_dict(resume.content), "error": None},
     )
 
 
@@ -1118,7 +1147,7 @@ async def save_resume_edit(
         return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
     form = await request.form()
-    edited = _apply_manual_edits(resume.content or {}, form)
+    edited = _apply_manual_edits(_as_content_dict(resume.content), form)
     templates = request.app.state.templates
 
     if _content_is_empty(edited):
