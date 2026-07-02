@@ -122,11 +122,75 @@ def _format_experience_bank(
     )
 
 
+# One-page trimming caps. Applied after parsing so the rendered PDF realistically
+# fits when the user asks for a single page — the LLM can't perfectly control
+# rendered page count, so prompt guidance + this content cap work together.
+_ONE_PAGE_MAX_ROLES = 4
+_ONE_PAGE_BULLET_CAPS = [4, 3, 3, 2]  # bullets kept per role, by position
+
+
+def _options_block(include_summary: bool, page_length: str) -> str:
+    """Prompt guidance for the two tailor options.
+
+    Returns "" when both options are at their defaults (summary on, automatic
+    length), so the default path's prompt is byte-for-byte unchanged.
+    """
+    parts: List[str] = []
+    if not include_summary:
+        parts.append(
+            'SUMMARY: Do NOT include a professional summary section. Set the '
+            '"summary" field to an empty string "".'
+        )
+    if page_length == "1":
+        parts.append(
+            "LENGTH: Target a strict ONE-PAGE resume. Be aggressive about brevity — "
+            "keep only the most relevant roles and the strongest bullets (about 3-4 "
+            "bullets on the most relevant role, fewer on older ones), condense phrasing, "
+            "and drop the least-relevant experience. Prioritize content matching the JD."
+        )
+    elif page_length == "2":
+        parts.append(
+            "LENGTH: Target roughly TWO PAGES. You may include fuller detail and more "
+            "bullets per role, while staying truthful and relevant."
+        )
+    if not parts:
+        return ""
+    return "\n\nOUTPUT OPTIONS (follow exactly):\n" + "\n".join(f"- {p}" for p in parts)
+
+
+def _apply_options(
+    tailored: TailoredResume, include_summary: bool, page_length: str
+) -> TailoredResume:
+    """Enforce the options on parsed output (defensive + best-effort length).
+
+    Defaults (summary on, auto length) are a no-op, so the default path returns
+    exactly what the model produced.
+    """
+    if not include_summary:
+        tailored.summary = ""
+    if page_length == "1":
+        trimmed: List[Dict[str, Any]] = []
+        for i, role in enumerate(tailored.work_history[:_ONE_PAGE_MAX_ROLES]):
+            role = dict(role)
+            cap = _ONE_PAGE_BULLET_CAPS[i] if i < len(_ONE_PAGE_BULLET_CAPS) else 2
+            bullets = role.get("bullets") or []
+            if len(bullets) > cap:
+                role["bullets"] = bullets[:cap]
+            trimmed.append(role)
+        tailored.work_history = trimmed
+    return tailored
+
+
 def tailor_resume(
     profile_dict: Dict[str, Any],
     job: Job,
     experience_items: Optional[List[ExperienceItem]] = None,
+    *,
+    include_summary: bool = True,
+    page_length: str = "auto",
 ) -> TailoredResume:
+    if page_length not in ("1", "2"):
+        page_length = "auto"
     user_prompt = (
         f"JOB DESCRIPTION:\n"
         f"{job.title} @ {job.company}\n"
@@ -134,6 +198,7 @@ def tailor_resume(
         f"Tailor the candidate's resume to this job. Output JSON only."
     )
     user_prompt += _format_experience_bank(experience_items, job)
+    user_prompt += _options_block(include_summary, page_length)
     raw = llm.complete_with_cached_profile(
         profile=profile_dict,
         instructions=_TAILOR_INSTRUCTIONS,
@@ -142,7 +207,8 @@ def tailor_resume(
         max_tokens=8192,
         temperature=0.4,
     )
-    return _parse_tailored(raw, profile_dict)
+    tailored = _parse_tailored(raw, profile_dict)
+    return _apply_options(tailored, include_summary, page_length)
 
 
 def _parse_tailored(raw: str, profile_dict: Dict[str, Any]) -> TailoredResume:

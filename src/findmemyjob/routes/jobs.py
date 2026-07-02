@@ -906,8 +906,20 @@ def fair_ask_route(
 
 
 @router.post("/{job_id}/tailor")
-def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResponse:
-    """Generate tailored resume + cover letter + PDF. Confirm-mode only in v1."""
+def tailor(
+    job_id: int,
+    include_summary: bool = Form(False),
+    page_length: str = Form("auto"),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Generate tailored resume + cover letter + PDF. Confirm-mode only in v1.
+
+    include_summary: unchecked checkbox isn't submitted, so absence -> False; the
+    form ships the box checked, so the default user experience is summary-on.
+    page_length: "auto" (default) | "1" | "2".
+    """
+    if page_length not in ("1", "2"):
+        page_length = "auto"
     job = session.get(Job, job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
@@ -925,7 +937,10 @@ def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResp
 
     experience_items = _load_experience_items(session)
     try:
-        tailored = tailor_resume(profile_dict, job, experience_items)
+        tailored = tailor_resume(
+            profile_dict, job, experience_items,
+            include_summary=include_summary, page_length=page_length,
+        )
         diff = compute_diff(profile_dict, tailored)
         cover = generate_cover_letter(profile_dict, job, experience_items)
     except Exception as e:  # noqa: BLE001 - tailoring must never 500 the page
@@ -956,6 +971,8 @@ def tailor(job_id: int, session: Session = Depends(get_session)) -> RedirectResp
         diff_from_master=[d.model_dump() for d in diff],
         keywords_targeted=tailored.keywords_targeted,
         pdf_path=str(pdf_path),
+        include_summary=include_summary,
+        page_length=page_length,
     )
     session.add(resume)
     session.commit()

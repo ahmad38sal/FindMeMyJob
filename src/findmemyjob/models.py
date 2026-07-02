@@ -271,4 +271,7 @@ class Resume(SQLModel, table=True):
     # Bullet-by-bullet diff from master so the user can verify nothing was fabricated.
     diff_from_master: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
     keywords_targeted: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    # Per-tailor options (set on the tailor screen). Defaults match prior behavior.
+    include_summary: bool = SQLField(default=True)
+    page_length: str = SQLField(default="auto")  # auto | 1 | 2
     created_at: datetime = SQLField(default_factory=datetime.utcnow)

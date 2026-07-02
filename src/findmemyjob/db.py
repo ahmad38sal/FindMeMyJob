@@ -27,6 +27,18 @@ _JOB_ADDITIVE_COLUMNS = {
     "undated": "BOOLEAN",
 }
 
+# New per-resume tailor options. Additive + nullable; defaults match prior behavior
+# so old rows read as summary-on / automatic length.
+_RESUME_ADDITIVE_COLUMNS = {
+    "include_summary": "BOOLEAN",
+    "page_length": "TEXT",
+}
+
+_ADDITIVE_COLUMNS = {
+    "job": _JOB_ADDITIVE_COLUMNS,
+    "resume": _RESUME_ADDITIVE_COLUMNS,
+}
+
 
 def _build_engine():
     db_url = settings.database_url
@@ -60,26 +72,28 @@ engine = _build_engine()
 
 
 def _apply_additive_columns() -> None:
-    """Add new nullable Job columns to a pre-existing table (no destructive DDL).
+    """Add new nullable columns to pre-existing tables (no destructive DDL).
 
     SQLite and Postgres both accept ``ALTER TABLE ... ADD COLUMN`` for nullable
     columns. We only add what's missing, so this is safe to run on every boot.
     """
     inspector = inspect(engine)
-    if "job" not in inspector.get_table_names():
-        return  # create_all just made it with all columns — nothing to backfill
-    existing = {c["name"] for c in inspector.get_columns("job")}
+    table_names = set(inspector.get_table_names())
     is_sqlite = engine.dialect.name == "sqlite"
-    with engine.begin() as conn:
-        for name, sql_type in _JOB_ADDITIVE_COLUMNS.items():
-            if name in existing:
-                continue
-            col_type = "JSON" if (sql_type == "JSON" and is_sqlite) else sql_type
-            try:
-                conn.execute(text(f'ALTER TABLE job ADD COLUMN {name} {col_type}'))
-                logger.info("Added job.%s column", name)
-            except Exception as exc:  # noqa: BLE001 - race/older engine; non-fatal
-                logger.warning("Could not add job.%s (%s): %s", name, col_type, exc)
+    for table, columns in _ADDITIVE_COLUMNS.items():
+        if table not in table_names:
+            continue  # create_all just made it with all columns — nothing to backfill
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        with engine.begin() as conn:
+            for name, sql_type in columns.items():
+                if name in existing:
+                    continue
+                col_type = "JSON" if (sql_type == "JSON" and is_sqlite) else sql_type
+                try:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {col_type}'))
+                    logger.info("Added %s.%s column", table, name)
+                except Exception as exc:  # noqa: BLE001 - race/older engine; non-fatal
+                    logger.warning("Could not add %s.%s (%s): %s", table, name, col_type, exc)
 
 
 def init_db() -> None:

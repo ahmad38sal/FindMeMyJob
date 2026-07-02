@@ -31,13 +31,27 @@
         <p class="muted">Targeted keywords: {{ resume.keywords_targeted | join(", ") }}</p>
         <p style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <a href="/jobs/{{ job.id }}/resume.pdf" class="btn primary" target="_blank">Download tailored PDF</a>
-            <form action="/jobs/{{ job.id }}/tailor" method="post" style="display: inline;">
-                <button type="submit" class="btn">Re-tailor with current profile</button>
-            </form>
+        </p>
+        <form action="/jobs/{{ job.id }}/tailor" method="post">
+            <div class="tailor-options">
+                <label class="tailor-opt">
+                    <input type="checkbox" name="include_summary" value="1" {% if resume.include_summary is not false %}checked{% endif %}>
+                    Include professional summary
+                </label>
+                <label class="tailor-opt">
+                    <span>Length</span>
+                    <select name="page_length">
+                        <option value="auto" {% if resume.page_length in [none, "", "auto"] %}selected{% endif %}>Automatic</option>
+                        <option value="1" {% if resume.page_length == "1" %}selected{% endif %}>1 page</option>
+                        <option value="2" {% if resume.page_length == "2" %}selected{% endif %}>2 pages</option>
+                    </select>
+                </label>
+            </div>
+            <button type="submit" class="btn">Re-tailor with current profile</button>
             <span class="muted" style="font-size: 13px">
                 Re-runs tailoring against your latest profile — claims you've added since last tailor will surface.
             </span>
-        </p>
+        </form>
         <h3>Diff vs master <span class="muted">(verify nothing was fabricated)</span></h3>
         {% if resume.diff_from_master %}
             <table class="diff">
@@ -60,6 +74,20 @@
         <pre class="cover">{{ app.cover_letter }}</pre>
     {% else %}
         <form action="/jobs/{{ job.id }}/tailor" method="post">
+            <div class="tailor-options">
+                <label class="tailor-opt">
+                    <input type="checkbox" name="include_summary" value="1" checked>
+                    Include professional summary
+                </label>
+                <label class="tailor-opt">
+                    <span>Length</span>
+                    <select name="page_length">
+                        <option value="auto" selected>Automatic</option>
+                        <option value="1">1 page</option>
+                        <option value="2">2 pages</option>
+                    </select>
+                </label>
+            </div>
             <button type="submit" class="btn primary">
                 Tailor for this role
             </button>
