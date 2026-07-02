@@ -32,6 +32,7 @@ _JOB_ADDITIVE_COLUMNS = {
 _RESUME_ADDITIVE_COLUMNS = {
     "include_summary": "BOOLEAN",
     "page_length": "TEXT",
+    "manually_edited": "BOOLEAN",
 }
 
 _ADDITIVE_COLUMNS = {

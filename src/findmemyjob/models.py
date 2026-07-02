@@ -274,4 +274,6 @@ class Resume(SQLModel, table=True):
     # Per-tailor options (set on the tailor screen). Defaults match prior behavior.
     include_summary: bool = SQLField(default=True)
     page_length: str = SQLField(default="auto")  # auto | 1 | 2
+    # True once the user hand-edits the tailored text (no AI involved).
+    manually_edited: bool = SQLField(default=False)
     created_at: datetime = SQLField(default_factory=datetime.utcnow)

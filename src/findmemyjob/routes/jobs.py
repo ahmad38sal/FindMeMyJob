@@ -1012,6 +1012,161 @@ def download_tailored_pdf(job_id: int, session: Session = Depends(get_session)) 
     return FileResponse(resume.pdf_path, media_type="application/pdf", filename=download_name)
 
 
+def _tailored_resume_for_job(session: Session, job_id: int) -> Optional[Resume]:
+    app = session.exec(select(Application).where(Application.job_id == job_id)).first()
+    if not app or not app.tailored_resume_id:
+        return None
+    return session.get(Resume, app.tailored_resume_id)
+
+
+def _apply_manual_edits(content: Dict, form) -> Dict:
+    """Overlay edited text fields onto a copy of the stored content.
+
+    We mutate a copy of the existing structured content (rather than rebuilding
+    from scratch) so untouched metadata — skill years/evidence, per-role skills,
+    keywords_targeted, etc. — is preserved. Bullets/highlights are edited as
+    one-per-line textareas: blank lines are dropped so removing a line removes
+    the bullet. Keys are matched positionally against the render-time order.
+    """
+    edited = dict(content or {})
+    edited["summary"] = (form.get("summary") or "").strip()
+
+    new_wh = []
+    for i, role in enumerate(content.get("work_history") or []):
+        role = dict(role)
+        for key in ("title", "company", "location", "start", "end"):
+            val = form.get(f"wh_{i}_{key}")
+            if val is not None:
+                role[key] = val.strip()
+        bullets_raw = form.get(f"wh_{i}_bullets")
+        if bullets_raw is not None:
+            role["bullets"] = [b.strip() for b in bullets_raw.splitlines() if b.strip()]
+        new_wh.append(role)
+    edited["work_history"] = new_wh
+
+    new_edu = []
+    for j, ed in enumerate(content.get("education") or []):
+        ed = dict(ed)
+        for key in ("school", "degree", "field", "start", "end", "gpa"):
+            val = form.get(f"edu_{j}_{key}")
+            if val is not None:
+                ed[key] = val.strip()
+        hl_raw = form.get(f"edu_{j}_highlights")
+        if hl_raw is not None:
+            ed["highlights"] = [h.strip() for h in hl_raw.splitlines() if h.strip()]
+        new_edu.append(ed)
+    edited["education"] = new_edu
+
+    new_skills = []
+    for k, sk in enumerate(content.get("skills") or []):
+        sk = dict(sk)
+        nm = form.get(f"skill_{k}_name")
+        if nm is not None:
+            sk["name"] = nm.strip()
+        cat = form.get(f"skill_{k}_category")
+        if cat is not None:
+            sk["category"] = cat.strip()
+        if sk.get("name"):
+            new_skills.append(sk)
+    edited["skills"] = new_skills
+    return edited
+
+
+def _content_is_empty(content: Dict) -> bool:
+    if (content.get("summary") or "").strip():
+        return False
+    if any((r.get("bullets") or r.get("title") or r.get("company"))
+           for r in (content.get("work_history") or [])):
+        return False
+    if any(s.get("name") for s in (content.get("skills") or [])):
+        return False
+    if any((e.get("school") or e.get("degree") or e.get("field") or e.get("highlights"))
+           for e in (content.get("education") or [])):
+        return False
+    return True
+
+
+@router.get("/{job_id}/resume/edit")
+def edit_resume_form(
+    job_id: int, request: Request, session: Session = Depends(get_session)
+) -> HTMLResponse:
+    """Inline full-text editor for an already-tailored resume (no AI)."""
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    resume = _tailored_resume_for_job(session, job_id)
+    if resume is None:
+        return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request, "resume_edit.html",
+        {"job": job, "resume": resume, "content": resume.content or {}, "error": None},
+    )
+
+
+@router.post("/{job_id}/resume/edit")
+async def save_resume_edit(
+    job_id: int, request: Request, session: Session = Depends(get_session)
+):
+    """Save hand-edited resume text and re-render the PDF. No LLM involved."""
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    resume = _tailored_resume_for_job(session, job_id)
+    if resume is None:
+        return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+    form = await request.form()
+    edited = _apply_manual_edits(resume.content or {}, form)
+    templates = request.app.state.templates
+
+    if _content_is_empty(edited):
+        return templates.TemplateResponse(
+            request, "resume_edit.html",
+            {"job": job, "resume": resume, "content": edited,
+             "error": "Resume cannot be empty — add a summary, a role, or a skill before saving."},
+            status_code=400,
+        )
+
+    # 1) Persist the text edit first so it's never lost, even if the PDF fails.
+    try:
+        resume.content = edited
+        resume.manually_edited = True
+        session.add(resume)
+        session.commit()
+        session.refresh(resume)
+    except Exception as e:  # noqa: BLE001
+        session.rollback()
+        print(f"[resume-edit] save failed for job {job_id}: {type(e).__name__}: {e}")
+        return templates.TemplateResponse(
+            request, "resume_edit.html",
+            {"job": job, "resume": resume, "content": edited,
+             "error": "Couldn't save your edits just now. Please try again."},
+            status_code=200,  # never a raw 500; show a friendly page instead
+        )
+
+    # 2) Best-effort PDF regen from the edited content (same renderer as tailoring).
+    try:
+        profile_dict = _profile_dict(session)
+        pdf_path = save_resume_pdf(
+            contact=profile_dict.get("contact") or {},
+            summary=edited.get("summary") or "",
+            work_history=edited.get("work_history") or [],
+            education=edited.get("education") or profile_dict.get("education") or [],
+            skills=edited.get("skills") or [],
+            certifications=profile_dict.get("certifications") or [],
+            filename_hint=f"job-{job_id}-{job.company}-edited",
+        )
+        resume.pdf_path = str(pdf_path)
+        session.add(resume)
+        session.commit()
+    except Exception as e:  # noqa: BLE001 - text is saved; a render glitch must not 500
+        session.rollback()
+        print(f"[resume-edit] PDF regen failed for job {job_id}: {type(e).__name__}: {e}")
+
+    return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
+
+
 @router.post("/{job_id}/mark-applied")
 def mark_applied(job_id: int, session: Session = Depends(get_session)) -> RedirectResponse:
     """User submitted manually (or via the form-fill extension in v2). Record it."""

@@ -28,9 +28,13 @@
 <section class="panel">
     <h2>Tailored resume</h2>
     {% if resume %}
-        <p class="muted">Targeted keywords: {{ resume.keywords_targeted | join(", ") }}</p>
+        <p class="muted">
+            Targeted keywords: {{ resume.keywords_targeted | join(", ") }}
+            {% if resume.manually_edited %}<span class="badge" style="margin-left:6px">Manually edited</span>{% endif %}
+        </p>
         <p style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <a href="/jobs/{{ job.id }}/resume.pdf" class="btn primary" target="_blank">Download tailored PDF</a>
+            <a href="/jobs/{{ job.id }}/resume/edit" class="btn">Edit resume text</a>
         </p>
         <form action="/jobs/{{ job.id }}/tailor" method="post">
             <div class="tailor-options">

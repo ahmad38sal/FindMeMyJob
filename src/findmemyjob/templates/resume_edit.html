@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Edit resume · {{ job.title }} — {{ job.company }}{% endblock %}
+{% block content %}
+<a href="/jobs/{{ job.id }}">← Back to job</a>
+
+<div class="page-head">
+    <h1>Edit tailored resume</h1>
+</div>
+<p class="muted">
+    Hand-edit the text below — fix a word, tighten a line, drop a bullet — then Save.
+    This is a manual edit: no AI runs, and the rest of your resume is left untouched.
+    Saving re-renders the PDF from your edits.
+</p>
+
+{% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+
+<form action="/jobs/{{ job.id }}/resume/edit" method="post">
+    <section class="panel">
+        <h2>Summary</h2>
+        <label class="field full">
+            <span>Professional summary <span class="muted">(leave blank to omit)</span></span>
+            <textarea class="text-area" name="summary" rows="4">{{ content.get("summary", "") }}</textarea>
+        </label>
+    </section>
+
+    {% set work_history = content.get("work_history") or [] %}
+    {% if work_history %}
+    <section class="panel">
+        <h2>Experience</h2>
+        <p class="muted">One bullet per line. Delete a line to drop that bullet.</p>
+        {% for r in work_history %}
+        <div class="repeat-row">
+            <div class="field-grid">
+                <label class="field"><span>Title</span>
+                    <input type="text" name="wh_{{ loop.index0 }}_title" value="{{ r.get('title', '') }}"></label>
+                <label class="field"><span>Company</span>
+                    <input type="text" name="wh_{{ loop.index0 }}_company" value="{{ r.get('company', '') }}"></label>
+                <label class="field"><span>Location</span>
+                    <input type="text" name="wh_{{ loop.index0 }}_location" value="{{ r.get('location', '') }}"></label>
+                <label class="field"><span>Start</span>
+                    <input type="text" name="wh_{{ loop.index0 }}_start" value="{{ r.get('start', '') }}"></label>
+                <label class="field"><span>End</span>
+                    <input type="text" name="wh_{{ loop.index0 }}_end" value="{{ r.get('end', '') }}"></label>
+            </div>
+            <label class="field full">
+                <span>Bullets</span>
+                <textarea class="text-area" name="wh_{{ loop.index0 }}_bullets" rows="5">{{ (r.get("bullets") or []) | join("\n") }}</textarea>
+            </label>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {% set education = content.get("education") or [] %}
+    {% if education %}
+    <section class="panel">
+        <h2>Education</h2>
+        {% for e in education %}
+        <div class="repeat-row">
+            <div class="field-grid">
+                <label class="field"><span>School</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_school" value="{{ e.get('school', '') }}"></label>
+                <label class="field"><span>Degree</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_degree" value="{{ e.get('degree', '') }}"></label>
+                <label class="field"><span>Field</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_field" value="{{ e.get('field', '') }}"></label>
+                <label class="field"><span>Start</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_start" value="{{ e.get('start', '') }}"></label>
+                <label class="field"><span>End</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_end" value="{{ e.get('end', '') }}"></label>
+                <label class="field"><span>GPA</span>
+                    <input type="text" name="edu_{{ loop.index0 }}_gpa" value="{{ e.get('gpa', '') }}"></label>
+            </div>
+            <label class="field full">
+                <span>Highlights <span class="muted">(one per line)</span></span>
+                <textarea class="text-area" name="edu_{{ loop.index0 }}_highlights" rows="3">{{ (e.get("highlights") or []) | join("\n") }}</textarea>
+            </label>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {% set skills = content.get("skills") or [] %}
+    {% if skills %}
+    <section class="panel">
+        <h2>Skills</h2>
+        <div class="field-grid">
+            {% for s in skills %}
+            <label class="field"><span>{{ s.get("category") or "Skill" }}</span>
+                <input type="text" name="skill_{{ loop.index0 }}_name" value="{{ s.get('name', '') }}">
+                <input type="hidden" name="skill_{{ loop.index0 }}_category" value="{{ s.get('category', '') }}">
+            </label>
+            {% endfor %}
+        </div>
+        <p class="muted small">Clear a skill's name to remove it.</p>
+    </section>
+    {% endif %}
+
+    <div class="sticky-save">
+        <button type="submit" class="btn primary">Save &amp; re-render PDF</button>
+        <a href="/jobs/{{ job.id }}" class="btn">Cancel</a>
+    </div>
+</form>
+{% endblock %}
