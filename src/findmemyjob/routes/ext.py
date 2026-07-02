@@ -352,9 +352,13 @@ def tailored_resume_pdf(
     if not app or not app.tailored_resume_id:
         raise HTTPException(404, "no tailored resume — tailor the role first at /jobs/{job_id}")
     resume = session.get(Resume, app.tailored_resume_id)
-    if not resume or not resume.pdf_path:
-        raise HTTPException(404, "tailored resume has no PDF on disk")
+    if not resume:
+        raise HTTPException(404, "tailored resume not found")
     job = session.get(Job, job_id)
+    # Self-heal: regenerate on-demand if the stored PDF is missing/stale.
+    from findmemyjob.routes.jobs import _ensure_resume_pdf
+    if not _ensure_resume_pdf(session, resume, job):
+        raise HTTPException(404, "could not produce a PDF for this resume")
     safe_company = (job.company if job else "resume").replace(" ", "_")
     return FileResponse(
         resume.pdf_path,

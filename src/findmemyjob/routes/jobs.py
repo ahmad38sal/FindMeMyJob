@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import traceback
 from datetime import datetime, timedelta
 from typing import Dict, List
 from urllib.parse import urlparse
@@ -999,15 +1001,63 @@ def tailor(
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 
 
+def _regen_and_store_pdf(session: Session, resume: Resume, job) -> str:
+    """Render a fresh PDF from the resume's current content, persist the path.
+
+    Uses the same renderer/args as the manual-edit save path. Content is
+    normalized through _as_content_dict so a legacy string-content row renders
+    fine. Writes under settings.resumes_dir (absolute), updates resume.pdf_path,
+    and commits. Raises on render failure (callers decide how to surface it).
+    """
+    content = _as_content_dict(resume.content)
+    profile_dict = _profile_dict(session)
+    job_id = job.id if job else resume.job_id
+    company = (job.company if job else None) or "resume"
+    pdf_path = save_resume_pdf(
+        contact=profile_dict.get("contact") or {},
+        summary=content.get("summary") or "",
+        work_history=content.get("work_history") or [],
+        education=content.get("education") or profile_dict.get("education") or [],
+        skills=content.get("skills") or [],
+        certifications=profile_dict.get("certifications") or [],
+        filename_hint=f"job-{job_id}-{company}-edited",
+    )
+    resume.pdf_path = str(pdf_path)
+    session.add(resume)
+    session.commit()
+    session.refresh(resume)
+    return resume.pdf_path
+
+
+def _ensure_resume_pdf(session: Session, resume: Resume, job) -> bool:
+    """Guarantee resume.pdf_path points at an on-disk file, regenerating if not.
+
+    Self-heals legacy rows whose pdf_path is empty or a stale relative path to a
+    file that no longer exists on the container. Returns True when a usable file
+    exists after the call, False if regeneration failed.
+    """
+    if resume.pdf_path and os.path.exists(resume.pdf_path):
+        return True
+    try:
+        _regen_and_store_pdf(session, resume, job)
+    except Exception:  # noqa: BLE001 - surface for logs; caller returns a 404, never 500
+        session.rollback()
+        print(f"[resume-pdf] on-demand regen failed for resume {resume.id}:\n{traceback.format_exc()}")
+        return False
+    return bool(resume.pdf_path and os.path.exists(resume.pdf_path))
+
+
 @router.get("/{job_id}/resume.pdf")
 def download_tailored_pdf(job_id: int, session: Session = Depends(get_session)) -> FileResponse:
     app = session.exec(select(Application).where(Application.job_id == job_id)).first()
     if not app or not app.tailored_resume_id:
         raise HTTPException(404, "No tailored resume yet — tailor the role first.")
     resume = session.get(Resume, app.tailored_resume_id)
-    if not resume or not resume.pdf_path:
-        raise HTTPException(404, "Tailored resume has no PDF on disk.")
+    if not resume:
+        raise HTTPException(404, "Tailored resume not found.")
     job = session.get(Job, job_id)
+    if not _ensure_resume_pdf(session, resume, job):
+        raise HTTPException(404, "Could not produce a PDF for this resume.")
     safe_company = (job.company if job else "resume").replace(" ", "_")
     download_name = f"resume-{safe_company}-{job_id}.pdf"
     return FileResponse(resume.pdf_path, media_type="application/pdf",
@@ -1176,23 +1226,13 @@ async def save_resume_edit(
         )
 
     # 2) Best-effort PDF regen from the edited content (same renderer as tailoring).
+    #    The text is already committed above, so a render glitch must not 500 and
+    #    must not lose the edit — but we log the full traceback to stay debuggable.
     try:
-        profile_dict = _profile_dict(session)
-        pdf_path = save_resume_pdf(
-            contact=profile_dict.get("contact") or {},
-            summary=edited.get("summary") or "",
-            work_history=edited.get("work_history") or [],
-            education=edited.get("education") or profile_dict.get("education") or [],
-            skills=edited.get("skills") or [],
-            certifications=profile_dict.get("certifications") or [],
-            filename_hint=f"job-{job_id}-{job.company}-edited",
-        )
-        resume.pdf_path = str(pdf_path)
-        session.add(resume)
-        session.commit()
-    except Exception as e:  # noqa: BLE001 - text is saved; a render glitch must not 500
+        _regen_and_store_pdf(session, resume, job)
+    except Exception:  # noqa: BLE001
         session.rollback()
-        print(f"[resume-edit] PDF regen failed for job {job_id}: {type(e).__name__}: {e}")
+        print(f"[resume-edit] PDF regen failed for job {job_id}:\n{traceback.format_exc()}")
 
     return RedirectResponse(url=f"/jobs/{job_id}", status_code=303)
 

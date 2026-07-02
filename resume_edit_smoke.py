@@ -94,7 +94,10 @@ pdf_calls = {"count": 0, "last": None}
 def _fake_pdf(**kwargs):
     pdf_calls["count"] += 1
     pdf_calls["last"] = kwargs
-    return f"{_tmpdir}/edited-{pdf_calls['count']}.pdf"
+    path = f"{_tmpdir}/edited-{pdf_calls['count']}.pdf"
+    with open(path, "wb") as fh:  # write a real file so self-heal existence checks pass
+        fh.write(b"%PDF-1.4 fake")
+    return path
 
 
 jobs_routes.save_resume_pdf = _fake_pdf
@@ -285,6 +288,31 @@ with Session(engine) as s:
     ok(r6.manually_edited is True, "manually_edited flag set on repaired resume")
     ok(r6.pdf_path.endswith(".pdf") and "original2" not in r6.pdf_path,
        "pdf_path regenerated for repaired resume")
+
+# ---------------------------------------------------------------------------
+# 7. Self-heal: download regenerates when pdf_path points at a missing file
+# ---------------------------------------------------------------------------
+print("\n[self-heal download on missing PDF file]")
+with Session(engine) as s:
+    rr = s.get(Resume, resume_id)
+    rr.pdf_path = f"{_tmpdir}/data/resumes/does-not-exist-12345.pdf"  # stale relative-style path
+    s.add(rr)
+    s.commit()
+    ok(not os.path.exists(rr.pdf_path), "precondition: stored pdf_path file is missing")
+pdf_before = pdf_calls["count"]
+r = client.get(f"/jobs/{job_id}/resume.pdf")
+ok(r.status_code == 200, f"download with missing file self-heals -> {r.status_code}")
+ok(r.headers.get("content-type") == "application/pdf", "served content-type is application/pdf")
+ok(pdf_calls["count"] == pdf_before + 1, "PDF regenerated on-demand during download")
+with Session(engine) as s:
+    rr = s.get(Resume, resume_id)
+    ok(rr.pdf_path and os.path.exists(rr.pdf_path),
+       "pdf_path updated to an existing file after self-heal")
+# A second download with the file now present must NOT regenerate again.
+pdf_before = pdf_calls["count"]
+r = client.get(f"/jobs/{job_id}/resume.pdf")
+ok(r.status_code == 200, "second download still 200")
+ok(pdf_calls["count"] == pdf_before, "no needless regen when file already exists")
 
 print("\n" + "=" * 40)
 if failures:

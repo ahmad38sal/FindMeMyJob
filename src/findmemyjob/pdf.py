@@ -31,6 +31,18 @@ PDF_NO_CACHE_HEADERS = {
 }
 
 
+def _dict_items(items: Any) -> List[Dict[str, Any]]:
+    """Keep only dict entries from a section list.
+
+    The template calls ``.get()`` on every entry, so a stray string (or a
+    section stored as a bare string instead of a list) would abort the whole
+    render. Silently drop non-dict entries so one bad field can't nuke the PDF.
+    """
+    if not isinstance(items, list):
+        return []
+    return [it for it in items if isinstance(it, dict)]
+
+
 def _render_html(
     *,
     contact: Dict[str, Any],
@@ -42,12 +54,12 @@ def _render_html(
 ) -> str:
     template = _jinja.get_template("resume.html")
     return template.render(
-        contact=contact or {},
-        summary=summary or "",
-        work_history=work_history or [],
-        education=education or [],
-        skills=skills or [],
-        certifications=certifications or [],
+        contact=contact if isinstance(contact, dict) else {},
+        summary=summary if isinstance(summary, str) else (str(summary) if summary else ""),
+        work_history=_dict_items(work_history),
+        education=_dict_items(education),
+        skills=_dict_items(skills),
+        certifications=_dict_items(certifications),
     )
 
 
@@ -96,6 +108,6 @@ def save_resume_pdf(
     settings.resumes_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in filename_hint)[:60]
-    out = settings.resumes_dir / f"{safe}-{ts}.pdf"
+    out = (settings.resumes_dir / f"{safe}-{ts}.pdf").resolve()
     out.write_bytes(pdf_bytes)
     return out
