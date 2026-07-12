@@ -253,6 +253,10 @@ class Application(SQLModel, table=True):
     cover_letter: str = ""
     submitted_at: Optional[datetime] = None
     last_status_change: datetime = SQLField(default_factory=datetime.utcnow)
+    # When the application row was first created. Additive (backfilled on boot to
+    # last_status_change/submitted_at) so the dashboard has a stable created date
+    # even for pending rows that were never submitted.
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
     notes: str = ""
 
 
@@ -276,4 +280,72 @@ class Resume(SQLModel, table=True):
     page_length: str = SQLField(default="auto")  # auto | 1 | 2
     # True once the user hand-edits the tailored text (no AI involved).
     manually_edited: bool = SQLField(default=False)
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Skill Growth Engine (additive tables)
+# ---------------------------------------------------------------------------
+
+class SkillProficiency(str, Enum):
+    not_started = "not_started"
+    learning = "learning"
+    practicing = "practicing"
+    fluent = "fluent"
+
+
+class SkillInsight(SQLModel, table=True):
+    """One recommended skill from the weighted gap analysis across the pipeline.
+
+    Rows are fully replaced by the "Re-analyze" action; pages only read them, so
+    a page load never triggers the heavy LLM extraction.
+    """
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    name: str = SQLField(index=True)
+    frequency: int = 0                    # how many jobs mention it
+    weighted_score: float = 0.0           # frequency weighted by fit + gap
+    appears_in_target: bool = False       # shows up in high-fit / applied roles
+    is_gap: bool = False                  # not on the user's resume, or in gaps
+    sample_job_titles: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))
+    rationale: str = ""
+    rank: int = 0
+    computed_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
+class SkillProgress(SQLModel, table=True):
+    """Per-skill learning state: path, practice, proficiency, and resume loop.
+
+    Keyed loosely by skill name (the user learns a named skill, not an insight
+    row that gets replaced on re-analysis). Learning path + practice content are
+    generated on demand and cached here so the tutor/practice pages stay fast.
+    """
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    skill_name: str = SQLField(index=True)
+    proficiency: SkillProficiency = SQLField(default=SkillProficiency.not_started)
+    progress_pct: int = 0                 # 0-100 milestone/quiz driven
+    learning_path: Optional[Dict[str, Any]] = SQLField(default=None, sa_column=Column(JSON))
+    practice: Optional[Dict[str, Any]] = SQLField(default=None, sa_column=Column(JSON))
+    quiz_scores: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
+    marked_fluent_at: Optional[datetime] = None
+    resume_suggested: bool = False
+    resume_applied: bool = False
+    resume_suggestion: Optional[Dict[str, Any]] = SQLField(default=None, sa_column=Column(JSON))
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+    updated_at: datetime = SQLField(default_factory=datetime.utcnow)
+
+
+class SkillTutorSession(SQLModel, table=True):
+    """An AI-tutor chat session for one skill (mirrors InterviewSession)."""
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    skill_name: str = SQLField(index=True)
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+    status: str = SQLField(default="active")   # active | closed
+
+
+class SkillTutorTurn(SQLModel, table=True):
+    """A single message in a tutor transcript (mirrors InterviewTurn)."""
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    session_id: int = SQLField(foreign_key="skilltutorsession.id", index=True)
+    role: str                                  # tutor | student
+    content: str = ""
     created_at: datetime = SQLField(default_factory=datetime.utcnow)

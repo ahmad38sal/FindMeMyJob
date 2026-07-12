@@ -35,9 +35,16 @@ _RESUME_ADDITIVE_COLUMNS = {
     "manually_edited": "BOOLEAN",
 }
 
+# Dashboard needs a stable created timestamp even for pending rows that were
+# never submitted. Additive + nullable; backfilled below.
+_APPLICATION_ADDITIVE_COLUMNS = {
+    "created_at": "TIMESTAMP",
+}
+
 _ADDITIVE_COLUMNS = {
     "job": _JOB_ADDITIVE_COLUMNS,
     "resume": _RESUME_ADDITIVE_COLUMNS,
+    "application": _APPLICATION_ADDITIVE_COLUMNS,
 }
 
 
@@ -97,12 +104,31 @@ def _apply_additive_columns() -> None:
                     logger.warning("Could not add %s.%s (%s): %s", table, name, col_type, exc)
 
 
+def _backfill_application_created_at() -> None:
+    """Give pre-existing application rows a created_at when the column was just
+    added. Uses submitted_at, else last_status_change, else now — never NULL."""
+    inspector = inspect(engine)
+    if "application" not in set(inspector.get_table_names()):
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE application "
+                "SET created_at = COALESCE(created_at, submitted_at, last_status_change, "
+                + ("CURRENT_TIMESTAMP" if engine.dialect.name != "sqlite" else "CURRENT_TIMESTAMP")
+                + ") WHERE created_at IS NULL"
+            ))
+    except Exception as exc:  # noqa: BLE001 - non-fatal; new rows default fine
+        logger.warning("Could not backfill application.created_at: %s", exc)
+
+
 def init_db() -> None:
     """Import models then create tables. Idempotent."""
     try:
         from findmemyjob import models  # noqa: F401  — registers tables on metadata
         SQLModel.metadata.create_all(engine)
         _apply_additive_columns()
+        _backfill_application_created_at()
     except Exception as exc:
         logger.error("DB init failed: %s", exc)
         raise
