@@ -616,7 +616,7 @@ async function autoApplyLoop(jobId, adapter, upload, opts = {}) {
   let attached = false;
 
   // Fetch payload once — same job across all pages.
-  const payloadResp = await sendBg("fetch-autofill-payload", { job_id: jobId });
+  const payloadResp = await fetchPayload(adapter, jobId);
   if (!payloadResp?.ok) {
     setBanner(`Auto-apply failed: ${payloadResp?.error?.message || "couldn't fetch payload"}`, "error");
     return { ok: false, reason: "no_payload", filled: [], skipped: [], attached: false };
@@ -711,7 +711,7 @@ export function registerMessageListener(adapter, upload) {
         const out = { filled: [], skipped: [], attached: false };
         let payload = null;
         if (msg.kind !== "attach-resume-only") {
-          const r = await sendBg("fetch-autofill-payload", { job_id: msg.job_id });
+          const r = await fetchPayload(adapter, msg.job_id);
           if (!r?.ok) throw makeErr(r?.error);
           payload = r.data;
         }
@@ -738,6 +738,18 @@ export function registerMessageListener(adapter, upload) {
 
 function sendBg(kind, data) {
   return new Promise((resolve) => chrome.runtime.sendMessage({ kind, ...data }, resolve));
+}
+
+// Pick the backend endpoint for this adapter. Adapters that set
+// `payloadEndpoint: "application-data"` (Workday) get the ats.py-normalized
+// data — clean dates split into month/year + a current bool. Everyone else
+// gets the legacy flat autofill payload. Both shapes share the same top-level
+// keys, so the rest of the engine is agnostic to which one it received.
+function fetchPayload(adapter, jobId) {
+  const kind = adapter?.payloadEndpoint === "application-data"
+    ? "fetch-application-data"
+    : "fetch-autofill-payload";
+  return sendBg(kind, { job_id: jobId });
 }
 
 function makeErr(err) {

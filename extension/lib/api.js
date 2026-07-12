@@ -85,6 +85,14 @@ export async function getAutofillPayload(jobId) {
   return res.json();
 }
 
+// Normalized, ATS-safe application data (dates as MMM YYYY + month/year parts +
+// current bool). Superset of the autofill payload — preferred by the Workday
+// adapter so messy resume dates fill Workday's split date selects correctly.
+export async function getApplicationData(jobId) {
+  const res = await apiFetch(`/application-data/${jobId}`);
+  return res.json();
+}
+
 // Returns the resume as a transferable envelope: blobs can't cross
 // runtime.sendMessage, so callers reconstruct the Blob on their side.
 export async function getTailoredResumeEnvelope(jobId) {

@@ -97,6 +97,21 @@ function parseDateParts(iso) {
   return { month: m[2], year: m[1] };
 }
 
+// Date parts for a section item, preferring the normalized month/year fields
+// (application-data endpoint) and falling back to parsing item.start/item.end.
+// Months are returned zero-padded ("02") to match Workday's spinner values.
+function normalizedParts(item, which) {
+  const mo = item[`${which}_month`];
+  const yr = item[`${which}_year`];
+  if (mo != null || yr != null) {
+    return {
+      month: mo != null ? String(mo).padStart(2, "0") : "",
+      year: yr != null ? String(yr) : "",
+    };
+  }
+  return parseDateParts(item[which]);
+}
+
 // Workday <button>+listbox dropdown control: click trigger, wait for options, click match.
 async function clickWorkdayDropdown(triggerEl, value) {
   if (!triggerEl) return false;
@@ -127,6 +142,14 @@ function firstMatch(root, selectors) {
 export default {
   name: "workday",
   urlPattern: "*://*.myworkdayjobs.com/*",
+
+  // Use the ats.py-normalized endpoint: work_history rows arrive with
+  // start_month/start_year/end_month/end_year already split out (robust to
+  // messy resume dates like "January 2023" or "01/2023") plus a `current`
+  // bool. perRowMap below prefers those, so Workday's split date spinners +
+  // "I currently work here" checkbox fill correctly regardless of the raw
+  // stored format.
+  payloadEndpoint: "application-data",
 
   // My Information page — single-row fields. We try the common formField-*
   // pattern first, falling back to older Workday selectors. The actual input
@@ -215,17 +238,20 @@ export default {
         return final[final.length - 1] || null;
       },
       perRowMap: (item) => {
-        const start = parseDateParts(item.start);
-        const end = parseDateParts(item.end);
+        // Prefer the normalized month/year parts (application-data endpoint);
+        // fall back to parsing an ISO start/end (legacy autofill payload).
+        const start = normalizedParts(item, "start");
+        const end = normalizedParts(item, "end");
+        const current = item.current != null ? !!item.current : !!item.currently_work_here;
         return {
           job_title:           item.title,
           company:             item.company,
           location:            item.location,
           start_month:         start.month,
           start_year:          start.year,
-          end_month:           item.currently_work_here ? "" : end.month,
-          end_year:            item.currently_work_here ? "" : end.year,
-          currently_work_here: !!item.currently_work_here,
+          end_month:           current ? "" : end.month,
+          end_year:            current ? "" : end.year,
+          currently_work_here: current,
           description:         item.description,
         };
       },
@@ -290,8 +316,8 @@ export default {
         return after[after.length - 1] || null;
       },
       perRowMap: (item) => {
-        const start = parseDateParts(item.start);
-        const end = parseDateParts(item.end);
+        const start = normalizedParts(item, "start");
+        const end = normalizedParts(item, "end");
         return {
           school:         item.school,
           degree:         item.degree,

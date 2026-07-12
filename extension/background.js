@@ -105,6 +105,9 @@ const HANDLERS = {
   "fetch-autofill-payload": async ({ job_id }) => {
     return api.getAutofillPayload(job_id);
   },
+  "fetch-application-data": async ({ job_id }) => {
+    return api.getApplicationData(job_id);
+  },
   "fetch-tailored-resume": async ({ job_id }) => {
     return api.getTailoredResumeEnvelope(job_id);
   },
