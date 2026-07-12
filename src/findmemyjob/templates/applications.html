@@ -1,12 +1,98 @@
 {% extends "base.html" %}
-{% block title %}Applications{% endblock %}
+{% block title %}Application Dashboard{% endblock %}
 {% block content %}
 <div class="page-head">
-    <h1>Applications</h1>
-    <span class="muted">{{ total }} tracked</span>
+    <h1>Application Dashboard</h1>
+    <span class="muted">{{ stats.total }} tracked</span>
 </div>
 
-{% if total == 0 %}
+{# ---------------- Stats bar ---------------- #}
+<section class="stat-bar">
+    <div class="stat-card stat-hero">
+        <div class="stat-num">{{ stats.total }}</div>
+        <div class="stat-label">Total applications</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-num">{{ stats.applied_today }}</div>
+        <div class="stat-label">Applied today</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-num">{{ stats.applied_this_week }}</div>
+        <div class="stat-label">Applied this week</div>
+    </div>
+    <div class="stat-card stat-onday">
+        <div class="stat-num">{{ stats.applied_on_date }}</div>
+        <div class="stat-label">Applied on date</div>
+        <form method="get" action="/applications" class="onday-form">
+            <input type="date" name="on" value="{{ on_date.isoformat() }}"
+                   max="{{ stats.today_ny.isoformat() }}"
+                   onchange="this.form.submit()" class="date-input">
+        </form>
+    </div>
+</section>
+
+{# ---------------- Per-status counts ---------------- #}
+<section class="status-counts">
+    {% for s in all_statuses %}
+    <span class="status-chip">
+        <span class="status-dot status-{{ s }}"></span>
+        <span class="status-chip-label">{{ s }}</span>
+        <span class="status-chip-count">{{ stats.status_counts[s] }}</span>
+    </span>
+    {% endfor %}
+</section>
+
+{# ---------------- Charts ---------------- #}
+<section class="chart-row">
+    <div class="panel chart-panel">
+        <div class="panel-head"><h2>Applications over time</h2><span class="muted small">last 14 days</span></div>
+        <svg class="bar-chart" viewBox="0 0 560 160" preserveAspectRatio="none" role="img"
+             aria-label="Applications submitted per day for the last 14 days">
+            {% set n = stats.series | length %}
+            {% set bw = 560.0 / n %}
+            {% for pt in stats.series %}
+            {% set h = (pt.count / stats.series_max) * 120 %}
+            {% set x = loop.index0 * bw %}
+            <rect x="{{ "%.1f"|format(x + bw*0.15) }}" y="{{ "%.1f"|format(130 - h) }}"
+                  width="{{ "%.1f"|format(bw*0.7) }}" height="{{ "%.1f"|format(h) }}"
+                  rx="2" class="bar">
+                <title>{{ pt.label }}: {{ pt.count }}</title>
+            </rect>
+            {% if pt.count %}
+            <text x="{{ "%.1f"|format(x + bw*0.5) }}" y="{{ "%.1f"|format(126 - h) }}"
+                  class="bar-val" text-anchor="middle">{{ pt.count }}</text>
+            {% endif %}
+            {% if loop.index0 % 2 == 0 %}
+            <text x="{{ "%.1f"|format(x + bw*0.5) }}" y="150"
+                  class="bar-lbl" text-anchor="middle">{{ pt.label }}</text>
+            {% endif %}
+            {% endfor %}
+        </svg>
+    </div>
+
+    <div class="panel chart-panel">
+        <div class="panel-head"><h2>Funnel &amp; response</h2>
+            <span class="muted small">of {{ stats.rates.submitted_total }} submitted</span></div>
+        <div class="rate-grid">
+            {% set rates = [
+                ("Response rate", stats.rates.response_rate, "responded+interview+offer"),
+                ("Interview rate", stats.rates.interview_rate, "interview+offer"),
+                ("Offer rate", stats.rates.offer_rate, "offers"),
+                ("Rejection rate", stats.rates.rejection_rate, "rejected"),
+            ] %}
+            {% for label, pct, sub in rates %}
+            <div class="rate-item">
+                <div class="rate-head"><span>{{ label }}</span><span class="rate-pct">{{ pct }}%</span></div>
+                <div class="rate-track"><div class="rate-fill" style="width: {{ pct }}%"></div></div>
+                <div class="muted small">{{ sub }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{# ---------------- Kanban board ---------------- #}
+{% if stats.total == 0 %}
 <section class="panel empty-state">
     <h2>No applications yet</h2>
     <p class="muted">Score and tailor jobs to start tracking them here. Tailoring a role moves it to <strong>ready</strong>; marking it applied moves it to <strong>submitted</strong>.</p>
