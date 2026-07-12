@@ -341,6 +341,43 @@ def autofill_payload(
     return payload
 
 
+@router.get("/application-data/{job_id}")
+def application_data(
+    job_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    """Normalized, ATS-safe application data for a job (Feature A deliverable).
+
+    Assembled by ``ats.py`` from the master Profile overlaid with the job's
+    tailored Resume content. Dates come BOTH as "MMM YYYY" display strings AND
+    separate numeric month/year fields + a current-role bool — exactly what
+    Workday's split date selects + "I currently work here" checkbox need.
+
+    This is a superset of ``/jobs/{job_id}/autofill-payload`` (same flat keys),
+    so the extension consumes it as a drop-in for every fill path. Never 500s
+    on LLM outages — normalization is pure/heuristic.
+    """
+    _require_token(request)
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    profile = session.get(Profile, 1)
+    if profile is None:
+        raise HTTPException(400, "profile not set up")
+
+    resume_content: Dict[str, Any] = {}
+    app = session.exec(select(Application).where(Application.job_id == job_id)).first()
+    if app and app.tailored_resume_id:
+        resume = session.get(Resume, app.tailored_resume_id)
+        if resume is not None:
+            from findmemyjob.routes.jobs import _as_content_dict
+            resume_content = _as_content_dict(resume.content)
+
+    from findmemyjob import ats
+    return ats.build_application_data(job, profile.model_dump(), resume_content)
+
+
 @router.get("/jobs/{job_id}/tailored-resume.pdf")
 def tailored_resume_pdf(
     job_id: int,
