@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Skill Growth{% endblock %}
+{% block content %}
+<div class="page-head">
+    <h1>Skill Growth</h1>
+    {% if computed_at %}
+    <span class="muted">analyzed {{ computed_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+    {% endif %}
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Recommended skills to learn</h2>
+        <form method="post" action="/skills/reanalyze">
+            <button type="submit" class="btn primary">Re-analyze pipeline</button>
+        </form>
+    </div>
+    <p class="muted">Ranked by frequency across your saved jobs, weighted toward high-fit / applied roles and toward real gaps on your resume.</p>
+
+    {% if not insights %}
+    <div class="empty-state">
+        <p class="muted">No analysis yet. Click <strong>Re-analyze pipeline</strong> to scan your saved jobs and surface the highest-value skills to learn.</p>
+    </div>
+    {% else %}
+    <ol class="insight-list">
+        {% for ins in insights %}
+        {% set prog = progress.get(ins.name) %}
+        <li class="insight-card">
+            <div class="insight-main">
+                <div class="insight-head">
+                    <span class="insight-rank">#{{ ins.rank }}</span>
+                    <a class="insight-name" href="/skills/detail?name={{ ins.name | urlencode }}">{{ ins.name }}</a>
+                    {% if ins.is_gap %}<span class="badge badge-gap">gap</span>{% endif %}
+                    {% if ins.appears_in_target %}<span class="badge badge-target">high-fit</span>{% endif %}
+                    {% if prog and prog.proficiency.value != 'not_started' %}
+                    <span class="badge badge-prof prof-{{ prog.proficiency.value }}">{{ prog.proficiency.value }}</span>
+                    {% endif %}
+                </div>
+                <p class="insight-why muted small">{{ ins.rationale }}</p>
+                {% if ins.sample_job_titles %}
+                <div class="insight-samples small muted">e.g. {{ ins.sample_job_titles[:3] | join(" · ") }}</div>
+                {% endif %}
+            </div>
+            <div class="insight-side">
+                <div class="insight-metric"><span class="insight-metric-num">{{ ins.frequency }}</span><span class="insight-metric-lbl">jobs</span></div>
+                <div class="insight-metric"><span class="insight-metric-num">{{ "%.0f"|format(ins.weighted_score) }}</span><span class="insight-metric-lbl">score</span></div>
+                <a href="/skills/detail?name={{ ins.name | urlencode }}" class="btn small">Learn</a>
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
+    {% endif %}
+</section>
+{% endblock %}

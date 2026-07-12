@@ -1,0 +1,7 @@
+{# Appended to #chat-log after a student message (HTMX beforeend). #}
+<div class="bubble-row bubble-row-right">
+    <div class="bubble bubble-candidate">{{ student_turn.content }}</div>
+</div>
+<div class="bubble-row bubble-row-left">
+    <div class="bubble bubble-interviewer">{{ tutor_turn.content }}</div>
+</div>

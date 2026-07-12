@@ -16,7 +16,8 @@
         <a href="/profile/experience" {% if path.startswith('/profile/experience') %}class="active"{% endif %}>Experience</a>
         <a href="/jobs/top-picks" {% if path.startswith('/jobs/top-picks') %}class="active"{% endif %}>Top Picks</a>
         <a href="/jobs" {% if path.startswith('/jobs') and not path.startswith('/jobs/top-picks') %}class="active"{% endif %}>Jobs</a>
-        <a href="/applications" {% if path.startswith('/applications') %}class="active"{% endif %}>Applications</a>
+        <a href="/applications" {% if path.startswith('/applications') %}class="active"{% endif %}>Dashboard</a>
+        <a href="/skills" {% if path.startswith('/skills') %}class="active"{% endif %}>Skill Growth</a>
     </nav>
 </header>
 <main>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Tutor · {{ tsession.skill_name }}{% endblock %}
+{% block content %}
+<a href="/skills/detail?name={{ tsession.skill_name | urlencode }}">← Back to {{ tsession.skill_name }}</a>
+
+<div class="page-head">
+    <h1 style="margin-bottom:2px">AI tutor · {{ tsession.skill_name }}</h1>
+</div>
+<p class="muted">Session #{{ tsession.id }} — ask questions, request examples, or say "quiz me".</p>
+
+<div class="chat-log" id="chat-log">
+    {% for t in turns %}
+        {% if t.role == "tutor" %}
+        <div class="bubble-row bubble-row-left">
+            <div class="bubble bubble-interviewer">{{ t.content }}</div>
+        </div>
+        {% else %}
+        <div class="bubble-row bubble-row-right">
+            <div class="bubble bubble-candidate">{{ t.content }}</div>
+        </div>
+        {% endif %}
+    {% endfor %}
+</div>
+
+<form id="answer-form" class="answer-form"
+      hx-post="/skills/tutor/{{ tsession.id }}/message"
+      hx-target="#chat-log"
+      hx-swap="beforeend"
+      hx-disabled-elt="find button">
+    <textarea id="answer-box" name="message" rows="3" class="query-input"
+              placeholder="Type a message to your tutor…"
+              style="width:100%; resize:vertical; font-family:inherit"></textarea>
+    <div class="answer-controls">
+        <button type="submit" class="btn primary">Send</button>
+        <span class="htmx-indicator muted small">tutor is thinking…</span>
+    </div>
+</form>
+
+<script>
+(function () {
+    var answerBox = document.getElementById("answer-box");
+    var log = document.getElementById("chat-log");
+    function scrollDown() { if (log) log.scrollTop = log.scrollHeight; window.scrollTo(0, document.body.scrollHeight); }
+    document.body.addEventListener("htmx:afterSwap", function () {
+        if (answerBox) answerBox.value = "";
+        scrollDown();
+    });
+    scrollDown();
+})();
+</script>
+{% endblock %}

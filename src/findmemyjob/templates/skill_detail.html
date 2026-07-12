@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} · Skill Growth{% endblock %}
+{% block content %}
+<a href="/skills">← Back to Skill Growth</a>
+
+<div class="page-head">
+    <h1 style="margin-bottom:2px">{{ name }}</h1>
+    <span class="badge badge-prof prof-{{ prog.proficiency.value }}">{{ prog.proficiency.value }}</span>
+</div>
+{% if insight %}<p class="muted">{{ insight.rationale }}</p>{% endif %}
+
+{# ---- Progress + proficiency controls ---- #}
+<section class="panel">
+    <div class="panel-head"><h2>Progress</h2><span class="muted small">{{ prog.progress_pct }}%</span></div>
+    <div class="rate-track"><div class="rate-fill" style="width: {{ prog.progress_pct }}%"></div></div>
+    <div class="prof-controls">
+        <form method="post" action="/skills/proficiency" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <select name="proficiency" class="status-select" onchange="this.form.submit()">
+                {% for p in proficiencies %}
+                <option value="{{ p }}" {% if prog.proficiency.value == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <form method="post" action="/skills/proficiency" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <input type="hidden" name="proficiency" value="fluent">
+            <button type="submit" class="btn small primary">Mark fluent</button>
+        </form>
+        <form method="post" action="/skills/tutor/start" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <button type="submit" class="btn small">Open AI tutor</button>
+        </form>
+    </div>
+</section>
+
+{# ---- Resume suggestion (shown once fluent) ---- #}
+{% if prog.resume_suggested and prog.resume_suggestion %}
+<section class="panel resume-suggest">
+    <div class="panel-head"><h2>Resume suggestion</h2>
+        {% if prog.resume_applied %}<span class="badge badge-target">added to profile</span>{% endif %}
+    </div>
+    <p class="muted small">You reached fluency — here's a polished way to show it on your resume.</p>
+    <div class="suggest-entry">
+        <strong>Skills section:</strong>
+        {{ prog.resume_suggestion.skill_entry.name }}
+        <span class="muted small">({{ prog.resume_suggestion.skill_entry.category }})</span>
+    </div>
+    <ul class="suggest-bullets">
+        {% for b in prog.resume_suggestion.bullets %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% if not prog.resume_applied %}
+    <div class="prof-controls">
+        <form method="post" action="/skills/resume/accept" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <button type="submit" class="btn small primary">Accept — add to profile</button>
+        </form>
+        <form method="post" action="/skills/resume/dismiss" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <button type="submit" class="btn small">Dismiss</button>
+        </form>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{# ---- Learning path ---- #}
+<section class="panel">
+    <div class="panel-head"><h2>Learning path</h2>
+        <form method="post" action="/skills/generate" class="inline-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <input type="hidden" name="what" value="both">
+            <button type="submit" class="btn small">{% if prog.learning_path %}Regenerate{% else %}Generate path &amp; practice{% endif %}</button>
+        </form>
+    </div>
+    {% if prog.learning_path %}
+    <p class="muted small">Estimated time to fluency: <strong>{{ prog.learning_path.time_to_fluency }}</strong>
+        {% if prog.learning_path.generated_by == 'fallback' %}<span class="badge">offline template</span>{% endif %}</p>
+    <div class="milestones">
+        {% for m in prog.learning_path.milestones %}
+        <div class="milestone">
+            <h3 class="milestone-level">{{ m.level }}</h3>
+            <ul class="milestone-obj">{% for o in m.objectives %}<li>{{ o }}</li>{% endfor %}</ul>
+            {% if m.resources %}
+            <div class="milestone-res small">
+                <strong>Resources:</strong>
+                {% for r in m.resources %}
+                <span class="chip">{% if r.link %}<a href="{{ r.link }}" target="_blank" rel="noopener">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %} <span class="muted">· {{ r.kind }}</span></span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No learning path yet — generate one to get milestones, resources, and a time estimate.</p>
+    {% endif %}
+</section>
+
+{# ---- Interactive practice ---- #}
+{% if prog.practice %}
+<section class="panel">
+    <div class="panel-head"><h2>Practice</h2>
+        {% if prog.quiz_scores %}<span class="muted small">best {{ prog.progress_pct }}%</span>{% endif %}
+    </div>
+
+    {% if prog.practice.quiz %}
+    <form method="post" action="/skills/quiz" class="quiz-form">
+        <input type="hidden" name="name" value="{{ name }}">
+        {% for q in prog.practice.quiz %}
+        {% set qi = loop.index0 %}
+        <fieldset class="quiz-q">
+            <legend>{{ loop.index }}. {{ q.question }}</legend>
+            {% for opt in q.options %}
+            <label class="quiz-opt">
+                <input type="radio" name="q{{ qi }}" value="{{ loop.index0 }}">
+                {{ opt }}
+            </label>
+            {% endfor %}
+        </fieldset>
+        {% endfor %}
+        <button type="submit" class="btn primary">Submit quiz</button>
+    </form>
+    {% endif %}
+
+    {% if prog.practice.flashcards %}
+    <h3 class="sub-head">Flashcards</h3>
+    <div class="flashcards">
+        {% for c in prog.practice.flashcards %}
+        <details class="flashcard">
+            <summary>{{ c.front }}</summary>
+            <p>{{ c.back }}</p>
+        </details>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if prog.practice.drills %}
+    <h3 class="sub-head">Drills</h3>
+    <ul class="drills">{% for d in prog.practice.drills %}<li>{{ d }}</li>{% endfor %}</ul>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}
