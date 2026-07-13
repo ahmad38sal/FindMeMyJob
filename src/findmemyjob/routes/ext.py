@@ -142,6 +142,20 @@ class TrackUrlIn(BaseModel):
     company: Optional[str] = None
 
 
+class JobListItem(BaseModel):
+    job_id: int
+    title: str
+    company: str
+    url: str
+    match_score: Optional[float] = None
+    tailored_resume_available: bool = False
+    status: Optional[str] = None  # Application.status, if the job has an Application row
+
+
+class JobListOut(BaseModel):
+    jobs: List[JobListItem] = []
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -224,6 +238,63 @@ def match_by_url(
         keywords_targeted=(resume.keywords_targeted if resume else []) or [],
         suggest_action=action,
     )
+
+
+@router.get("/jobs", response_model=JobListOut)
+def list_jobs(
+    request: Request,
+    session: Session = Depends(get_session),
+    q: Optional[str] = None,
+    limit: int = 200,
+) -> JobListOut:
+    """List tracked jobs for the extension's manual job picker.
+
+    The popup uses this when auto URL-matching fails but the job is already in
+    the tracker: the user picks the right job, which is then pinned to the tab
+    (no duplicate Job is created). Ordered most-recently-touched first;
+    optional ``?q=`` is a case-insensitive substring filter over title+company.
+    Computes match_score / tailored_resume_available exactly like match_by_url
+    so the picked job renders identically to an auto-matched one.
+    """
+    _require_token(request)
+
+    limit = max(1, min(limit, 500))
+    needle = (q or "").strip().lower()
+
+    # Map job_id -> its Application (personal-scale table; one query is cheap).
+    apps: Dict[int, Application] = {}
+    for app in session.exec(select(Application)).all():
+        # Keep the most recently changed Application if a job somehow has many.
+        existing = apps.get(app.job_id)
+        if existing is None or app.last_status_change >= existing.last_status_change:
+            apps[app.job_id] = app
+
+    rows: List[tuple[Any, JobListItem]] = []
+    for job in session.exec(select(Job)).all():
+        if needle and needle not in f"{job.title or ''} {job.company or ''}".lower():
+            continue
+        app = apps.get(job.id)
+        resume = (
+            session.get(Resume, app.tailored_resume_id)
+            if (app and app.tailored_resume_id)
+            else None
+        )
+        item = JobListItem(
+            job_id=job.id,
+            title=job.title or "",
+            company=job.company or "",
+            url=job.url or "",
+            match_score=app.match_score if app else None,
+            tailored_resume_available=bool(resume and resume.pdf_path),
+            status=(app.status.value if app else None),
+        )
+        # Sort key: most recently touched first. Prefer the Application's
+        # last_status_change (created/updated), else the Job's fetched_at.
+        sort_ts = app.last_status_change if app else job.fetched_at
+        rows.append((sort_ts, item))
+
+    rows.sort(key=lambda r: r[0], reverse=True)
+    return JobListOut(jobs=[item for _, item in rows[:limit]])
 
 
 @router.get("/jobs/{job_id}/autofill-payload")

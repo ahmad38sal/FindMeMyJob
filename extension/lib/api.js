@@ -80,6 +80,14 @@ export async function trackUrl({ url, page_title, company }) {
   return res.json();
 }
 
+// Tracked jobs for the manual picker. `q` is an optional case-insensitive
+// title+company substring filter applied server-side.
+export async function listJobs(q) {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : "";
+  const res = await apiFetch(`/jobs${qs}`);
+  return res.json();
+}
+
 export async function getAutofillPayload(jobId) {
   const res = await apiFetch(`/jobs/${jobId}/autofill-payload`);
   return res.json();

@@ -116,6 +116,21 @@ const HANDLERS = {
     const { kind, tab_id_hint, ...body } = msg;
     return api.llmFillSuggest(body);
   },
+  "list-jobs": async ({ q }) => {
+    return api.listJobs(q);
+  },
+  // Manually pin a user-chosen tracked job to the current tab. Reuses the
+  // same pin store as URL-resolved pins, so subsequent "match-current-page"
+  // resolves to this job (via match-by-url job_id) — no duplicate Job is
+  // created. "unpin-tab" clears it like any other pin.
+  "pin-job": async ({ job_id }, sender) => {
+    const tabId = sender?.tab?.id;
+    if (!job_id) throw Object.assign(new Error("job_id required"), { kind: "BadRequest" });
+    if (tabId) await setPin(tabId, job_id);
+    const matched = await api.matchByUrl({ job_id });
+    if (tabId) await setBadge(tabId, (matched.match_score ?? 0) >= 0.7 ? "good" : "weak");
+    return { ...matched, pinned: true };
+  },
   "track-url": async ({ url, page_title, company }, sender) => {
     const result = await api.trackUrl({ url, page_title, company });
     if (result?.job_id && sender?.tab?.id) await setPin(sender.tab.id, result.job_id);

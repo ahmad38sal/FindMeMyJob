@@ -98,3 +98,22 @@ footer.fail    { color: var(--pill-bad); }
   padding: 0; font: inherit; text-align: right;
 }
 .link:hover { text-decoration: underline; }
+
+/* "Choose a different job" secondary affordance under the action buttons. */
+.choose-row { margin-top: 10px; text-align: center; }
+.choose-row .link { text-align: center; margin: 0 auto; }
+
+/* Manual job picker */
+.picker { display: flex; flex-direction: column; gap: 10px; }
+.picker #job-search {
+  font: inherit; width: 100%; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--btn-bg); color: var(--fg);
+}
+.job-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.job-item {
+  display: flex; gap: 8px; align-items: center; text-align: left; width: 100%;
+}
+.job-item-main { flex: 1; min-width: 0; }
+.job-item-title { font-weight: 600; line-height: 1.25; }
+.job-item .chips { margin: 4px 0 0 0; }
+.picker #picker-back { text-align: left; }

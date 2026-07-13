@@ -115,12 +115,91 @@ function bindUnpin() {
   });
 }
 
+// "Choose a different job" affordance — shown in every state so the user can
+// override a wrong/absent auto-match by picking a tracked job manually.
+function chooseJobLink(primary = false) {
+  return primary
+    ? `<button class="primary" id="choose-job">Choose a job from your tracker</button>`
+    : `<button class="link" id="choose-job">Choose a different job</button>`;
+}
+
+function bindChooseJob(tab) {
+  const btn = document.getElementById("choose-job");
+  if (!btn) return;
+  btn.addEventListener("click", () => renderPicker(tab));
+}
+
+// Searchable list of tracked jobs. Picking one pins it to the tab (reusing the
+// tab-pin mechanism — no duplicate Job) then re-renders the matched UI.
+async function renderPicker(tab) {
+  root.innerHTML = `
+    <div class="picker">
+      <input type="search" id="job-search" placeholder="Search your tracked jobs…" autocomplete="off" />
+      <div id="job-list" class="job-list"><p class="note">Loading…</p></div>
+      <button class="link" id="picker-back">← Back</button>
+    </div>
+  `;
+  document.getElementById("picker-back").addEventListener("click", () => render());
+
+  const listEl = document.getElementById("job-list");
+  const searchEl = document.getElementById("job-search");
+
+  const load = async (q) => {
+    const resp = await send("list-jobs", { q });
+    if (!resp?.ok) {
+      listEl.innerHTML = `<p class="note fail">${escape(resp?.error?.message || "Failed to load jobs")}</p>`;
+      return;
+    }
+    const jobs = resp.data?.jobs || [];
+    if (!jobs.length) {
+      listEl.innerHTML = `<p class="note">${q ? "No matching jobs." : "No tracked jobs yet."}</p>`;
+      return;
+    }
+    listEl.innerHTML = jobs.map((j) => {
+      const badge = j.tailored_resume_available ? `<span class="chip">resume</span>` : "";
+      const status = j.status ? `<span class="chip">${escape(j.status)}</span>` : "";
+      const score = j.match_score != null
+        ? `<span class="pill ${scoreClass(j.match_score)}">${fmtScore(j.match_score)}</span>` : "";
+      return `
+        <button class="job-item" data-job-id="${j.job_id}">
+          <div class="job-item-main">
+            <div class="job-item-title">${escape(j.title)}</div>
+            <div class="company">${escape(j.company)}</div>
+            <div class="chips">${badge}${status}</div>
+          </div>
+          ${score}
+        </button>`;
+    }).join("");
+    listEl.querySelectorAll(".job-item").forEach((el) => {
+      el.addEventListener("click", async () => {
+        const jobId = Number(el.dataset.jobId);
+        setStatus("Pinning…");
+        const r = await send("pin-job", { job_id: jobId });
+        if (!r?.ok) { setStatus(r?.error?.message || "Failed to pin", "fail"); return; }
+        setStatus("Pinned.", "success");
+        render();
+      });
+    });
+  };
+
+  let t = null;
+  searchEl.addEventListener("input", () => {
+    clearTimeout(t);
+    t = setTimeout(() => load(searchEl.value.trim()), 200);
+  });
+  await load("");
+  searchEl.focus();
+}
+
 async function renderMatch(data, tab) {
   if (!data.job_id) {
     root.innerHTML = `
       <p class="note">No matching job in your tracker yet.</p>
-      <button class="primary" id="track">Add this URL to tracker</button>
+      ${chooseJobLink(true)}
+      <p class="note" style="margin-top:8px;">Already added this job? Pick it above so the buttons target it.</p>
+      <button id="track">Add this URL as a new job</button>
     `;
+    bindChooseJob(tab);
     document.getElementById("track").addEventListener("click", async () => {
       setStatus("Adding…");
       const r = await send("track-url", {
@@ -159,8 +238,10 @@ async function renderMatch(data, tab) {
       <p class="note" style="margin-top:8px;">
         Auto-apply fills every page and clicks Continue. Stops at Submit so you can review — never auto-submits.
       </p>
+      <div class="choose-row">${chooseJobLink(false)}</div>
     `;
     bindUnpin();
+    bindChooseJob(tab);
     bindFillButtons(tab.id, data.job_id);
     return;
   }
@@ -177,8 +258,10 @@ async function renderMatch(data, tab) {
     </div>
     <p class="note">${score == null ? "Not scored yet." : "Tailored resume not ready yet."}</p>
     <button class="primary" id="open-job">Open in FindMeMyJob</button>
+    <div class="choose-row">${chooseJobLink(false)}</div>
   `;
   bindUnpin();
+  bindChooseJob(tab);
   document.getElementById("open-job").addEventListener("click", async () => {
     const r = await send("get-backend-url");
     const base = r?.data?.backend_url || "http://localhost:8000";
