@@ -119,7 +119,8 @@
             {% if r.get("company") %}<span class="role-company"> — {{ r["company"] }}</span>{% endif %}
         </div>
         <div class="role-dates">
-            {{ r.get("start", "") }}{% if r.get("end") %} – {{ r["end"] }}{% else %} – Present{% endif %}
+            {% set _end = r.get("end") %}
+            {{ r.get("start", "") }}{% if _end and _end|string|lower not in ["none", "null", "n/a", "na", "-"] %} – {{ _end }}{% else %} – Present{% endif %}
         </div>
     </div>
     {% if r.get("location") %}<div class="role-meta">{{ r["location"] }}</div>{% endif %}
@@ -143,7 +144,8 @@
             {% if e.get("field") %}, {{ e["field"] }}{% endif %}
         </div>
         <div class="edu-meta">
-            {{ e.get("start", "") }}{% if e.get("end") %} – {{ e["end"] }}{% endif %}
+            {% set _eend = e.get("end") %}
+            {{ e.get("start", "") }}{% if _eend and _eend|string|lower not in ["none", "null", "n/a", "na", "-"] %} – {{ _eend }}{% endif %}
         </div>
     </div>
     {% if e.get("gpa") %}<div class="role-meta">GPA: {{ e["gpa"] }}</div>{% endif %}

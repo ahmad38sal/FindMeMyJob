@@ -40,8 +40,26 @@ def resume_content_hash(content: Any) -> str:
 # Work-history ordering (reverse-chronological)
 # ---------------------------------------------------------------------------
 
-# An empty/absent end date, or these words, means the role is ongoing.
-_ONGOING_END = {"", "present", "current", "now", "ongoing", "presently", "date"}
+# An empty/absent end date, or these words, means the role is ongoing. Includes
+# stringified-null artifacts ("none"/"null") from an earlier code path that
+# str()'d Python None into the JSON content.
+_ONGOING_END = {
+    "", "none", "null", "n/a", "na", "-",
+    "present", "current", "now", "ongoing", "presently",
+}
+
+# Date values that are really "no value" — normalized back to real None so the
+# stored content is clean and the template never renders the word "None".
+_NULLISH_DATE = {"", "none", "null", "n/a", "na", "-"}
+
+
+def _clean_date_field(value: Any) -> Any:
+    """Rewrite a stringified-null / sentinel date to real None; else pass through."""
+    if value is None:
+        return None
+    if str(value).strip().lower() in _NULLISH_DATE:
+        return None
+    return value
 
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7,
@@ -616,6 +634,12 @@ def format_resume_content(
         if not isinstance(role, dict):
             continue
         role = dict(role)
+        # Clean stringified-null date artifacts so data is correct going forward
+        # and the template renders ongoing roles as "Present" (never "None").
+        if "start" in role:
+            role["start"] = _clean_date_field(role.get("start"))
+        if "end" in role:
+            role["end"] = _clean_date_field(role.get("end"))
         bullets = role.get("bullets") or []
         cap = bullet_cap(i, page_length)
         kept = select_bullets(bullets, keywords, cap)

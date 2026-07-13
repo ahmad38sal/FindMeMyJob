@@ -338,6 +338,54 @@ p1_54 = format_resume_content({"work_history": RESUME54, "skills": []}, job_text
 p2_54 = format_resume_content(p1_54, job_text="")
 ok(p1_54 == p2_54, "format pass with ordering is idempotent")
 
+# ---------------------------------------------------------------------------
+# (i) stringified-null end ("None"/"null"/"") -> ongoing + normalized to None
+# ---------------------------------------------------------------------------
+print("\n[work-history: stringified-null end treated as ongoing]")
+
+# resume-55 shape: two ongoing roles whose end was str()'d to the literal "None".
+RESUME55 = [
+    {"company": "BrightMinds", "title": "Engineer", "start": "2019-06", "end": "None"},
+    {"company": "Apple", "title": "Staff Engineer", "start": "2026-01", "end": "None"},
+    {"company": "Genius", "title": "Analyst", "start": "2024-02", "end": "2025-12"},
+    {"company": "SOC", "title": "SOC Analyst", "start": "2023-06", "end": "2024-02"},
+]
+ord55 = [r["company"] for r in order_work_history(RESUME55)]
+ok(ord55 == ["Apple", "BrightMinds", "Genius", "SOC"],
+   f"end='None' (string) sorts as ongoing (top, start desc): {ord55}")
+
+# Other nullish sentinels also count as ongoing.
+for sentinel in ("none", "null", "", "N/A", "-"):
+    o = order_work_history([
+        {"company": "Ended", "start": "2010-01", "end": "2011-01"},
+        {"company": "Live", "start": "2020-01", "end": sentinel},
+    ])
+    ok([r["company"] for r in o][0] == "Live",
+       f"end={sentinel!r} treated as ongoing (sorts above ended role)")
+
+# format_resume_content normalizes the sentinel strings to real Python None.
+fmt55 = format_resume_content({"work_history": RESUME55, "skills": []}, job_text="")
+apple = next(r for r in fmt55["work_history"] if r["company"] == "Apple")
+bright = next(r for r in fmt55["work_history"] if r["company"] == "BrightMinds")
+ok(apple["end"] is None and bright["end"] is None,
+   "end 'None' (string) normalized to real None in content")
+ok([r["company"] for r in fmt55["work_history"]] == ["Apple", "BrightMinds", "Genius", "SOC"],
+   "resume-55 reorders correctly through the full format pass")
+
+# The reformat pass MUST see this as a change (so stale resumes get fixed).
+ok(fmt55["work_history"] != RESUME55,
+   "resume-55 content changes under format pass (reformat will pick it up)")
+
+# start='null'/'None' also cleaned to None; still idempotent.
+fmt_null = format_resume_content(
+    {"work_history": [{"company": "X", "title": "T", "start": "null", "end": "None"}], "skills": []},
+    job_text="")
+ok(fmt_null["work_history"][0]["start"] is None and fmt_null["work_history"][0]["end"] is None,
+   "start 'null' and end 'None' both normalized to real None")
+p1_55 = format_resume_content({"work_history": RESUME55, "skills": []}, job_text="")
+p2_55 = format_resume_content(p1_55, job_text="")
+ok(p1_55 == p2_55, "format pass idempotent after null-date normalization")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")
