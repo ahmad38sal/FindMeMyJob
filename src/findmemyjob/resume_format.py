@@ -204,6 +204,9 @@ _CANON = {
     "wordpress": "WordPress", "mysql": "MySQL", "mongodb": "MongoDB",
     "dynamodb": "DynamoDB", "graphql": "GraphQL", "openai": "OpenAI",
     "chatgpt": "ChatGPT", "nextjs": "Next.js", "next.js": "Next.js",
+    "active directory": "Active Directory", "cisco meraki": "Cisco Meraki",
+    "jfrog artifactory": "JFrog Artifactory", "jfrog": "JFrog",
+    "artifactory": "Artifactory", "siem": "SIEM",
     # Compound / phrase skills (kept intact, canonicalized).
     "ux/ui": "UX/UI", "ui/ux": "UX/UI",
     "human-centered design": "Human-Centered Design",
@@ -251,13 +254,20 @@ _CATEGORY_SETS = {
         "git", "github", "gitlab", "jira", "tableau", "power bi", "excel",
         "salesforce", "hubspot", "snowflake", "bigquery", "redshift", "airflow",
         "dbt", "looker", "segment", "google analytics", "ga4", "mixpanel",
-        "amplitude", "notion", "wordpress",
+        "amplitude", "notion", "wordpress", "active directory", "cisco meraki",
+        "jfrog artifactory", "artifactory", "servicenow", "splunk", "confluence",
     },
     "Design": {
         "figma", "sketch", "photoshop", "illustrator", "adobe", "ui design",
         "ux design", "wireframing", "prototyping", "indesign", "after effects",
         "ux/ui", "human-centered design", "design systems", "premiere pro",
         "davinci resolve", "capcut",
+    },
+    "Security": {
+        "siem", "vulnerability remediation", "vulnerability management",
+        "change management", "incident response", "penetration testing",
+        "threat detection", "endpoint security", "network security",
+        "identity management", "iam", "firewalls", "edr", "soc",
     },
     "Marketing/Domain": {
         "seo", "sem", "ppc", "google ads", "meta ads", "performance marketing",
@@ -268,6 +278,11 @@ _CATEGORY_SETS = {
         "tiktok", "tiktok ads", "linkedin", "youtube",
     },
 }
+
+# The canonical bucket names we emit. Used so re-running the pass PRESERVES an
+# already-assigned bucket instead of trying (and failing) to re-map it — the
+# root of the old non-idempotency bug.
+_CANON_CATEGORIES = set(_CATEGORY_SETS) | {"Other"}
 
 # Legacy free-text category names -> our canonical category buckets.
 _LEGACY_CATEGORY = {
@@ -459,7 +474,12 @@ def normalize_skills(skills: Any, max_tags: int = 16) -> List[Dict[str, str]]:
             seen.add(key)
             cat = categorize_skill(tag)
             if cat == "Other" and legacy_cat and legacy_cat.lower() != "other":
-                cat = _LEGACY_CATEGORY.get(legacy_cat.lower(), cat)
+                # Preserve a bucket we already assigned on a prior pass (keeps the
+                # pass idempotent); otherwise map a legacy free-text category name.
+                if legacy_cat in _CANON_CATEGORIES:
+                    cat = legacy_cat
+                else:
+                    cat = _LEGACY_CATEGORY.get(legacy_cat.lower(), cat)
             out.append({"name": tag, "category": cat})
             if len(out) >= max_tags:
                 return out

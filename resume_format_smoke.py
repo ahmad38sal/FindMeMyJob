@@ -216,6 +216,71 @@ twice_sk = normalize_skills([{"name": s["name"]} for s in once_sk])
 ok([s["name"] for s in once_sk] == [s["name"] for s in twice_sk],
    "skill normalization is idempotent on refined inputs")
 
+# ---------------------------------------------------------------------------
+# (g) full-pass idempotency incl. skill categorization (regression: id=37)
+# ---------------------------------------------------------------------------
+print("\n[idempotency: format_resume_content(x2) == format_resume_content(x1)]")
+
+# Real id=37 skill set. Legacy free-text buckets on the raw rows previously
+# flipped to "Other" on the second pass; now they must be a stable fixed point.
+ID37 = {
+    "summary": "Security engineer.",
+    "work_history": [
+        {"company": "Acme", "title": "Security Engineer", "bullets": [
+            "Hardened Active Directory and remediated vulnerabilities across the fleet",
+            "Automated SIEM alerting with Python and Bash",
+        ]},
+    ],
+    "skills": [
+        {"name": "Active Directory", "category": "tools"},
+        {"name": "Cisco Meraki", "category": "tools"},
+        {"name": "Jfrog Artifactory", "category": "tools"},
+        {"name": "Azure", "category": "cloud"},
+        {"name": "Jira", "category": "tools"},
+        {"name": "SIEM", "category": "other"},
+        {"name": "Vulnerability Remediation", "category": "other"},
+        {"name": "Change Management", "category": "other"},
+        {"name": "Python", "category": "language"},
+        {"name": "Bash", "category": "language"},
+        {"name": "SQL", "category": "language"},
+        {"name": "JavaScript", "category": "language"},
+        {"name": "Docker", "category": "cloud"},
+        {"name": "Kubernetes", "category": "cloud"},
+    ],
+    "education": [],
+}
+JOB37 = "Security engineer. Active Directory, SIEM, vulnerability remediation, Python."
+
+fixtures = [
+    ("id=37 security skills", ID37, JOB37),
+    ("case-a engineer", content, JOB),
+    ("case-b recency", content_b, "throughput project"),
+]
+for label, fx, jt in fixtures:
+    p1 = format_resume_content(fx, job_text=jt, page_length="auto")
+    p2 = format_resume_content(p1, job_text=jt, page_length="auto")
+    p3 = format_resume_content(p2, job_text=jt, page_length="auto")
+    ok(p1 == p2 == p3, f"{label}: double/triple application == single application")
+
+# Prove the exact reported regression is fixed and correctly categorized.
+id37_p1 = format_resume_content(ID37, job_text=JOB37)["skills"]
+id37_p2 = format_resume_content(
+    {"skills": id37_p1}, job_text=JOB37)["skills"]
+cats = {s["name"]: s["category"] for s in id37_p1}
+print("  --- id=37 skill categories (pass 1) ---")
+for s in id37_p1:
+    print(f"      {s['name']:26s} {s['category']}")
+ok(id37_p1 == id37_p2, "id=37 skill categorization is a stable fixed point (pass1 == pass2)")
+ok(cats.get("Active Directory") == "Tools & Platforms"
+   and cats.get("Cisco Meraki") == "Tools & Platforms"
+   and cats.get("JFrog Artifactory") == "Tools & Platforms",
+   "Active Directory / Cisco Meraki / JFrog Artifactory -> Tools & Platforms")
+ok(cats.get("Docker") == "Cloud & DevOps" and cats.get("Kubernetes") == "Cloud & DevOps"
+   and cats.get("Azure") == "Cloud & DevOps", "Docker / Kubernetes / Azure stay Cloud & DevOps")
+ok(cats.get("Jira") == "Tools & Platforms", "Jira -> Tools & Platforms")
+ok("JFrog Artifactory" in cats and "Jfrog Artifactory" not in cats,
+   "JFrog casing preserved (not 'Jfrog')")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")
