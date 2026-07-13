@@ -88,6 +88,34 @@ yonly = ats.normalize_date("2023")
 ok(yonly["year"] == 2023 and yonly["month"] is None and yonly["display"] == "2023",
    "normalize_date('2023') -> year-only")
 
+# (a) Range strings in a single field: take the FIRST part, preserving month.
+range_first_cases = [
+    ("May 2020 - Present", 5, 2020),
+    ("Jan 2021 – Mar 2023", 1, 2021),   # en dash
+    ("Feb 2019 — Dec 2020", 2, 2019),   # em dash
+    ("June 2018 to August 2019", 6, 2018),
+    ("Apr 2017 | Jul 2018", 4, 2017),
+]
+for raw, mo, yr in range_first_cases:
+    d = ats.normalize_date(raw)
+    ok(d["month"] == mo and d["year"] == yr and not d["current"],
+       f"normalize_date({raw!r}) -> first part month={mo} year={yr}")
+# Bare-hyphen year range still splits to first year; ISO stays intact.
+ok(ats.normalize_date("2020-2022")["year"] == 2020 and ats.normalize_date("2020-2022")["month"] is None,
+   "normalize_date('2020-2022') -> first year 2020")
+iso = ats.normalize_date("2023-01")
+ok(iso["month"] == 1 and iso["year"] == 2023, "normalize_date('2023-01') stays ISO, not a range")
+
+# (b)/(c) normalize_date_range splits both ends.
+r1 = ats.normalize_date_range("May 2020 - Present")
+ok(r1["start"]["month"] == 5 and r1["start"]["year"] == 2020 and not r1["start"]["current"],
+   "normalize_date_range('May 2020 - Present') start=May 2020")
+ok(r1["end"]["current"] is True, "normalize_date_range('May 2020 - Present') end current")
+r2 = ats.normalize_date_range("Jan 2021 - Mar 2023")
+ok(r2["start"]["month"] == 1 and r2["start"]["year"] == 2021, "normalize_date_range start Jan 2021")
+ok(r2["end"]["month"] == 3 and r2["end"]["year"] == 2023 and not r2["end"]["current"],
+   "normalize_date_range end Mar 2023")
+
 for junk in ("", None, "n/a", "garbage"):
     d = ats.normalize_date(junk)
     ok(d["month"] is None and d["year"] is None and not d["current"],
@@ -128,6 +156,15 @@ n3 = ats.split_name("Jean Luc Picard")
 ok(n3["first_name"] == "Jean" and n3["last_name"] == "Luc Picard", "split_name folds middle into last")
 n1 = ats.split_name("Cher")
 ok(n1["first_name"] == "Cher" and n1["last_name"] == "", "split_name single token")
+
+# normalize_url: real URLs pass through, label-only values drop to "".
+ok(ats.normalize_url("https://linkedin.com/in/ada") == "https://linkedin.com/in/ada",
+   "normalize_url keeps full https URL")
+ok(ats.normalize_url("linkedin.com/in/ada") == "linkedin.com/in/ada", "normalize_url keeps bare domain")
+ok(ats.normalize_url("www.github.com/ada") == "www.github.com/ada", "normalize_url keeps www")
+ok(ats.normalize_url("LinkedIn") == "", "normalize_url drops label-only 'LinkedIn'")
+ok(ats.normalize_url("GitHub") == "" and ats.normalize_url("Portfolio") == "",
+   "normalize_url drops 'GitHub'/'Portfolio' labels")
 
 # ---------------------------------------------------------------------------
 # 4. build_application_data (pure) — profile + resume overlay
@@ -190,6 +227,29 @@ past = wh[1]
 ok(past["current"] is False, "past role not current")
 ok(past["start_month"] == 3 and past["start_year"] == 2016, "past role start 03/2016 split")
 ok(past["end_month"] == 12 and past["end_year"] == 2019, "past role end 12/2019 split")
+
+# (e) Real linkedin URL passes through unchanged (nested + flat keys).
+ok(data["contact"]["linkedin"] == "https://linkedin.com/in/ada", "real linkedin URL passes through (contact)")
+ok(data["linkedin_url"] == "https://linkedin.com/in/ada", "real linkedin URL passes through (flat)")
+
+# (d) Label-only linkedin value drops to "" in both nested + flat keys.
+PROFILE_LABEL = dict(PROFILE, contact=dict(PROFILE["contact"], linkedin="LinkedIn", github="GitHub"))
+data_lbl = ats.build_application_data(FakeJob(), PROFILE_LABEL, resume_content=None)
+ok(data_lbl["contact"]["linkedin"] == "" and data_lbl["contact"]["github"] == "",
+   "label-only linkedin/github dropped to '' (contact)")
+ok(data_lbl["linkedin_url"] == "" and data_lbl["github_url"] == "",
+   "label-only linkedin/github dropped to '' (flat)")
+
+# Combined range packed into a work-history start field with no separate end.
+PROFILE_RANGE = dict(PROFILE, work_history=[
+    {"company": "Range Co", "title": "Eng", "location": "NYC",
+     "start": "Jan 2021 - Mar 2023", "end": None},
+])
+data_rng = ats.build_application_data(FakeJob(), PROFILE_RANGE, resume_content=None)
+wr = data_rng["work_history"][0]
+ok(wr["start_month"] == 1 and wr["start_year"] == 2021, "packed range start split (work)")
+ok(wr["end_month"] == 3 and wr["end_year"] == 2023 and wr["current"] is False,
+   "packed range end split, not current (work)")
 
 edu = data["education"][0]
 ok(edu["school"] == "Cambridge" and edu["field_of_study"] == "Mathematics", "education fields")

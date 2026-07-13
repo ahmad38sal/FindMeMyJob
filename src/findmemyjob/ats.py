@@ -70,6 +70,26 @@ def _build_date(month: Optional[int], year: Optional[int]) -> Dict[str, Any]:
     return {"display": display, "month": month, "year": year, "current": False}
 
 
+def _split_range(s: str):
+    """Detect a date-range string and split into (left, right), else None.
+
+    A single stored field sometimes holds a whole range: "May 2020 - Present",
+    "Jan 2021 – Mar 2023", "2020-2022", "2019 to 2021", "2018 | 2020". We must
+    NOT mistake ISO dates ("2023-01", "2023-01-15", "01-2023") for ranges, so a
+    bare hyphen only counts when both sides look like years / a current-word.
+    """
+    # Spaced or word/pipe/unicode-dash separators are unambiguous.
+    for sep in (r"\s+–\s+", r"\s+—\s+", r"\s+-\s+", r"\s+to\s+", r"\s*\|\s*", "–", "—"):
+        parts = re.split(sep, s, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+            return parts[0].strip(), parts[1].strip()
+    # Bare hyphen: only a "YYYY-YYYY" / "YYYY-Present" year range (never ISO).
+    m = re.match(r"^(\d{4})\s*-\s*(\d{4}|present|current|now|ongoing)$", s, re.IGNORECASE)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None
+
+
 def normalize_date(raw: Any) -> Dict[str, Any]:
     """Normalize a messy date into a consistent structure.
 
@@ -80,7 +100,9 @@ def normalize_date(raw: Any) -> Dict[str, Any]:
     Handles: ``date``/``datetime`` objects, ISO ("2023-01", "2023-01-15",
     "2023/01"), US ("01/2023", "1/2023", "01-2023", "03/15/2023"), month names
     ("Jan 2023", "January 2023", "Jan. 2023", "Sept 2023"), year-only ("2023"),
-    and "Present"/"Current"/"Now"/"" → current / empty.
+    "Present"/"Current"/"Now"/"" → current / empty, and range strings
+    ("May 2020 - Present") — of which only the FIRST part is used here (see
+    ``normalize_date_range`` when the caller needs both ends).
     """
     if raw is None:
         return _empty_date()
@@ -92,6 +114,11 @@ def normalize_date(raw: Any) -> Dict[str, Any]:
         return _empty_date()
     if s.lower() in _CURRENT_WORDS:
         return _current_date()
+
+    # Range string in a single field → normalize just the start half.
+    rng = _split_range(s)
+    if rng:
+        return normalize_date(rng[0])
 
     # Month name form: "January 2023", "Jan 2023", "Jan. 2023", "Sept 2023".
     m = re.match(r"^([A-Za-z]{3,9})\.?\s*[,]?\s*(\d{4})$", s)
@@ -132,6 +159,20 @@ def normalize_date(raw: Any) -> Dict[str, Any]:
     return _build_date(month, year)
 
 
+def normalize_date_range(raw: Any) -> Dict[str, Any]:
+    """Split a combined range field into ``{"start": ..., "end": ...}``.
+
+    Each side is run through ``normalize_date`` (so "Present"/"Current" on the
+    right becomes ``current=True``). When no range separator is present, the
+    whole value is treated as the start and end is empty.
+    """
+    s = str(raw or "").strip()
+    rng = _split_range(s)
+    if rng:
+        return {"start": normalize_date(rng[0]), "end": normalize_date(rng[1])}
+    return {"start": normalize_date(s), "end": _empty_date()}
+
+
 # ---------------------------------------------------------------------------
 # Phone
 # ---------------------------------------------------------------------------
@@ -168,6 +209,31 @@ def normalize_phone(raw: Any) -> str:
 
 def _clean_ws(s: Any) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip()
+
+
+_KNOWN_URL_DOMAINS = ("linkedin.com", "github.com", "gitlab.com", "behance.net", "dribbble.com")
+_DOMAIN_RE = re.compile(r"[A-Za-z0-9-]+\.[A-Za-z]{2,}")
+
+
+def normalize_url(raw: Any) -> str:
+    """Return the value only if it looks like a URL, else "".
+
+    Profiles sometimes store the anchor *label* ("LinkedIn", "GitHub",
+    "Portfolio") instead of the actual URL. Emitting that as a link would put
+    "LinkedIn" into an ATS URL field, so a label-only value (no scheme, no
+    path, no domain) is dropped to an empty string.
+    """
+    s = _clean_ws(raw)
+    if not s:
+        return ""
+    low = s.lower()
+    if low.startswith(("http://", "https://", "www.")) or s.startswith("/"):
+        return s
+    if any(d in low for d in _KNOWN_URL_DOMAINS):
+        return s
+    if "." in s and _DOMAIN_RE.search(s):
+        return s
+    return ""
 
 
 def normalize_company(raw: Any) -> str:
@@ -251,11 +317,17 @@ def _merge_section(profile_items: Any, resume_items: Any) -> List[Dict[str, Any]
 
 
 def _work_item(w: Dict[str, Any]) -> Dict[str, Any]:
-    start = normalize_date(w.get("start"))
+    raw_start = w.get("start")
     raw_end = w.get("end")
+    start = normalize_date(raw_start)
     end = normalize_date(raw_end)
-    # A role is current when its end date is empty/missing or literally "Present".
-    current = end["current"] or not _first_nonempty(raw_end)
+    # Combined range packed into the start field with no separate end
+    # ("May 2020 - Present") — split it so both ends populate.
+    if not _first_nonempty(raw_end) and _split_range(str(raw_start or "").strip()):
+        rng = normalize_date_range(raw_start)
+        start, end = rng["start"], rng["end"]
+    # A role is current when the resolved end says so or has no year at all.
+    current = end["current"] or end["year"] is None
     bullets = w.get("bullets") or []
     return {
         "company": normalize_company(w.get("company")),
@@ -280,8 +352,14 @@ def _work_item(w: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _education_item(e: Dict[str, Any]) -> Dict[str, Any]:
-    start = normalize_date(e.get("start"))
-    end = normalize_date(e.get("end"))
+    raw_start = e.get("start")
+    raw_end = e.get("end")
+    start = normalize_date(raw_start)
+    end = normalize_date(raw_end)
+    # Combined range packed into the start field with no separate end.
+    if not _first_nonempty(raw_end) and _split_range(str(raw_start or "").strip()):
+        rng = normalize_date_range(raw_start)
+        start, end = rng["start"], rng["end"]
     highlights = e.get("highlights") or []
     return {
         "school": normalize_company(e.get("school")),
@@ -353,9 +431,9 @@ def build_application_data(
         "city": loc["city"],
         "region": loc["region"],
         "country": loc["country"],
-        "linkedin": contact.get("linkedin") or "",
-        "github": contact.get("github") or "",
-        "portfolio": contact.get("portfolio") or "",
+        "linkedin": normalize_url(contact.get("linkedin")),
+        "github": normalize_url(contact.get("github")),
+        "portfolio": normalize_url(contact.get("portfolio")),
     }
 
     job_ctx = {
