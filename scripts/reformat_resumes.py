@@ -10,6 +10,11 @@ This calls NO language model — it is pure heuristic normalization, so it is
 cheap and safe to run repeatedly. The formatting pass is idempotent, so a
 second run finds nothing to change.
 
+Whenever a row's content changes, its ``content_hash`` is updated and — if no
+fresh PDF is rendered in this run (``--no-pdf`` or a render failure) — the stale
+``pdf_path`` is cleared, so the next download regenerates rather than serving an
+out-of-date PDF.
+
 Content is always written back as a real dict (never a JSON string), reusing
 ``_as_content_dict`` to tolerate legacy string rows.
 
@@ -29,7 +34,7 @@ from sqlmodel import Session, select
 
 from findmemyjob.db import engine
 from findmemyjob.models import Job, Resume, ResumeKind
-from findmemyjob.resume_format import format_resume_content
+from findmemyjob.resume_format import format_resume_content, resume_content_hash
 from findmemyjob.routes.jobs import _as_content_dict
 
 
@@ -101,8 +106,14 @@ def main() -> int:
                 continue
 
             r.content = formatted  # real dict; JSON column serializes it
+            r.content_hash = resume_content_hash(formatted)
             if not args.no_pdf and _regen_pdf(session, r, formatted):
                 regenerated += 1
+            else:
+                # No fresh PDF was rendered now (either --no-pdf or a render
+                # failure). Drop the stale cached path so the next download
+                # regenerates from the new content instead of serving the old file.
+                r.pdf_path = None
             session.add(r)
 
         if args.dry_run:

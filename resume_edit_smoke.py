@@ -347,6 +347,46 @@ try:
 finally:
     pdf_mod._html_to_pdf_bytes = _orig_html_to_pdf
 
+# ---------------------------------------------------------------------------
+# 9. Freshness: a CONTENT change (with the old PDF still on disk) is detected as
+#    stale and regenerated on download — the class of bug hit in production.
+# ---------------------------------------------------------------------------
+print("\n[freshness: content change invalidates cached PDF]")
+with Session(engine) as s:
+    rr = s.get(Resume, resume_id)
+    ok(jobs_routes._pdf_is_fresh(rr),
+       "precondition: cached PDF is fresh (hash matches + file exists)")
+    # Mutate content WITHOUT regenerating — mimics a reformat/edit that updated
+    # content but left the previously rendered PDF file in place.
+    mutated = dict(rr.content)
+    mutated["summary"] = (mutated.get("summary") or "") + " [content changed]"
+    rr.content = mutated
+    s.add(rr)
+    s.commit()
+    s.refresh(rr)
+    stale_hash = rr.content_hash
+    ok(rr.pdf_path and os.path.exists(rr.pdf_path),
+       "precondition: old PDF file is still on disk")
+    ok(not jobs_routes._pdf_is_fresh(rr),
+       "freshness check reports STALE after content change")
+
+pdf_before = pdf_calls["count"]
+r = client.get(f"/jobs/{job_id}/resume.pdf")
+ok(r.status_code == 200, f"download of stale resume -> {r.status_code}")
+ok(pdf_calls["count"] == pdf_before + 1, "stale content triggers a regen on download")
+ok("[content changed]" in (pdf_calls["last"] or {}).get("summary", ""),
+   "regen rendered from the NEW content")
+with Session(engine) as s:
+    rr = s.get(Resume, resume_id)
+    ok(rr.content_hash and rr.content_hash != stale_hash,
+       "content_hash updated to match new content after regen")
+    ok(jobs_routes._pdf_is_fresh(rr), "cached PDF is fresh again after regen")
+
+# Unchanged content must NOT regenerate again (freshness is a stable fixed point).
+pdf_before = pdf_calls["count"]
+client.get(f"/jobs/{job_id}/resume.pdf")
+ok(pdf_calls["count"] == pdf_before, "no needless regen when content is unchanged")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")

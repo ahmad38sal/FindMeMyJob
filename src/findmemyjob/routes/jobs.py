@@ -27,6 +27,7 @@ from findmemyjob.models import (
     ResumeKind,
 )
 from findmemyjob.pdf import PDF_NO_CACHE_HEADERS, save_resume_pdf
+from findmemyjob.resume_format import resume_content_hash
 from findmemyjob.salary import (
     SalaryEstimate,
     build_salary_view,
@@ -974,6 +975,7 @@ def tailor(
         diff_from_master=[d.model_dump() for d in diff],
         keywords_targeted=tailored.keywords_targeted,
         pdf_path=str(pdf_path),
+        content_hash=resume_content_hash(tailored.model_dump()),
         include_summary=include_summary,
         page_length=page_length,
     )
@@ -1023,20 +1025,34 @@ def _regen_and_store_pdf(session: Session, resume: Resume, job) -> str:
         filename_hint=f"job-{job_id}-{company}-edited",
     )
     resume.pdf_path = str(pdf_path)
+    resume.content_hash = resume_content_hash(content)
     session.add(resume)
     session.commit()
     session.refresh(resume)
     return resume.pdf_path
 
 
-def _ensure_resume_pdf(session: Session, resume: Resume, job) -> bool:
-    """Guarantee resume.pdf_path points at an on-disk file, regenerating if not.
+def _pdf_is_fresh(resume: Resume) -> bool:
+    """True when the cached PDF exists AND was rendered from the current content.
 
-    Self-heals legacy rows whose pdf_path is empty or a stale relative path to a
-    file that no longer exists on the container. Returns True when a usable file
-    exists after the call, False if regeneration failed.
+    Freshness = file present on disk and its recorded content hash still matches
+    the resume's current content. A legacy row with no hash (None) is treated as
+    stale so it regenerates once and records a hash going forward.
     """
-    if resume.pdf_path and os.path.exists(resume.pdf_path):
+    if not (resume.pdf_path and os.path.exists(resume.pdf_path)):
+        return False
+    return resume.content_hash == resume_content_hash(_as_content_dict(resume.content))
+
+
+def _ensure_resume_pdf(session: Session, resume: Resume, job) -> bool:
+    """Guarantee resume.pdf_path points at a CURRENT on-disk file, regenerating if not.
+
+    Regenerates when the cached PDF is missing OR stale (content changed since it
+    was rendered), so an edit/reformat never serves an out-of-date file. Also
+    self-heals legacy rows whose pdf_path is empty or points at a missing file.
+    Returns True when a usable, up-to-date file exists after the call.
+    """
+    if _pdf_is_fresh(resume):
         return True
     try:
         _regen_and_store_pdf(session, resume, job)

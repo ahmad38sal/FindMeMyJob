@@ -20,8 +20,21 @@ Everything here is idempotent: running the pass twice yields the same result.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any, Dict, List
+
+
+def resume_content_hash(content: Any) -> str:
+    """Stable sha256 of a resume ``content`` dict, for cached-PDF invalidation.
+
+    Canonicalizes to sorted-key, whitespace-free JSON so the same logical content
+    always hashes identically regardless of key order or serialization. ``str``
+    fallback covers dates/other non-JSON scalars.
+    """
+    canon = json.dumps(content or {}, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 # ---------------------------------------------------------------------------
 # Bullets

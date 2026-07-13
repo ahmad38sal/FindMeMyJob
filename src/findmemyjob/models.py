@@ -272,6 +272,11 @@ class Resume(SQLModel, table=True):
     # Same shape as Profile sections, but post-tailoring (subset / reordered / rephrased).
     content: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
     pdf_path: Optional[str] = None
+    # sha256 of the canonical JSON of `content` at the time `pdf_path` was last
+    # rendered. Download routes regenerate when this no longer matches the current
+    # content, so a stale cached PDF is never served. Nullable + backfilled lazily
+    # on the next render (legacy rows read as None -> treated as stale once).
+    content_hash: Optional[str] = None
     # Bullet-by-bullet diff from master so the user can verify nothing was fabricated.
     diff_from_master: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
     keywords_targeted: List[str] = SQLField(default_factory=list, sa_column=Column(JSON))

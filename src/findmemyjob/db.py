@@ -33,6 +33,9 @@ _RESUME_ADDITIVE_COLUMNS = {
     "include_summary": "BOOLEAN",
     "page_length": "TEXT",
     "manually_edited": "BOOLEAN",
+    # Content-freshness hash for cached-PDF invalidation. Nullable; legacy rows
+    # stay None and regenerate once on next download.
+    "content_hash": "TEXT",
 }
 
 # Dashboard needs a stable created timestamp even for pending rows that were
