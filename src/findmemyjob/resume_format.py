@@ -116,34 +116,38 @@ def _month_ordinal(value: Any) -> int | None:
 
 
 def order_work_history(work_history: Any) -> List[Any]:
-    """Return roles sorted strictly reverse-chronological (pure, stable, idempotent).
+    """Return roles sorted by START date, newest first (pure, stable, idempotent).
+
+    Pure reverse-chronological by START date only — an ongoing/"Present" role is
+    NOT floated to the top; a role's rank is decided by its start date alone.
 
     Order:
-      1. Ongoing roles (no end date) first, by START date descending.
-      2. Then ended roles by END date descending; tie-break START date descending.
-      3. Identical keys preserve original relative order (stable).
+      1. All roles by START date descending (most recent start first).
+      2. Tie-break (equal start): ongoing (no/None/Present end) ranks above an
+         ended role; then END date descending; then original order (stable).
+      3. Roles with a missing/unparseable START date sink to the bottom, stable
+         among themselves. Non-dict entries sink below those, stable.
 
-    Non-dict entries and unparseable dates are tolerated (sorted oldest, never
-    dropped). No role fields are mutated — only the list order changes.
+    No role fields are mutated — only the list order changes.
     """
     if not isinstance(work_history, list):
         return work_history
 
-    _OLD = -1  # ordinal sentinel for a missing/unparseable date (sorts oldest)
+    _OLD = -1  # ordinal sentinel for a missing/unparseable end date
 
     def sort_key(pair):
         idx, role = pair
         if not isinstance(role, dict):
-            # Non-dict rows sink to the very end but keep their relative order.
-            return (2, 0, 0, idx)
-        ongoing = _is_ongoing(role.get("end"))
+            # Non-dict rows sink below everything, keeping their relative order.
+            return (2, 0, 0, 0, idx)
         start = _month_ordinal(role.get("start"))
-        start = start if start is not None else _OLD
-        if ongoing:
-            return (0, -start, 0, idx)
+        if start is None:
+            # Missing/unparseable start -> bottom tier, stable by original order.
+            return (1, 0, 0, 0, idx)
+        ongoing_rank = 0 if _is_ongoing(role.get("end")) else 1
         end = _month_ordinal(role.get("end"))
         end = end if end is not None else _OLD
-        return (1, -end, -start, idx)
+        return (0, -start, ongoing_rank, -end, idx)
 
     return [role for _, role in sorted(enumerate(work_history), key=sort_key)]
 

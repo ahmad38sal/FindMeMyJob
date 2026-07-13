@@ -283,11 +283,13 @@ ok("JFrog Artifactory" in cats and "Jfrog Artifactory" not in cats,
    "JFrog casing preserved (not 'Jfrog')")
 
 # ---------------------------------------------------------------------------
-# (h) work-history ordering: reverse-chronological, ongoing first, stable
+# (h) work-history ordering: pure reverse-chronological by START date, stable
 # ---------------------------------------------------------------------------
 print("\n[work-history: reverse-chronological ordering]")
 
-# Exact resume-54 role set (see BUILD_SPEC_work_history_order.md).
+# Exact resume-54 role set (see BUILD_SPEC_work_history_order.md). Sort is by
+# START date only: the ongoing 2019 BrightMinds role sinks to the BOTTOM because
+# it has the oldest start — ongoing status no longer floats it to the top.
 RESUME54 = [
     {"company": "BrightMinds", "title": "Engineer", "start": "2019-06", "end": None},
     {"company": "Apple", "title": "Staff Engineer", "start": "2026-01", "end": "Present"},
@@ -296,8 +298,8 @@ RESUME54 = [
 ]
 ordered = order_work_history(RESUME54)
 order_names = [r["company"] for r in ordered]
-ok(order_names == ["Apple", "BrightMinds", "Genius", "SOC"],
-   f"resume-54 orders Apple->BrightMinds->Genius->SOC (got {order_names})")
+ok(order_names == ["Apple", "Genius", "SOC", "BrightMinds"],
+   f"resume-54 orders Apple->Genius->SOC->BrightMinds by start date (got {order_names})")
 
 # Two ongoing roles order by start desc.
 two_ongoing = order_work_history([
@@ -307,30 +309,39 @@ two_ongoing = order_work_history([
 ok([r["company"] for r in two_ongoing] == ["New", "Old"],
    "two ongoing roles order by start descending")
 
+# Equal start date: ongoing ranks above ended, then end date descending.
+tie = order_work_history([
+    {"company": "Ended", "start": "2020-01", "end": "2022-01"},
+    {"company": "Ongoing", "start": "2020-01", "end": None},
+])
+ok([r["company"] for r in tie] == ["Ongoing", "Ended"],
+   "equal start: ongoing role ranks above ended role")
+
 # Idempotency + stability.
 once_o = order_work_history(RESUME54)
 twice_o = order_work_history(once_o)
 ok(once_o == twice_o, "order_work_history is idempotent")
-ok([r["company"] for r in twice_o] == ["Apple", "BrightMinds", "Genius", "SOC"],
+ok([r["company"] for r in twice_o] == ["Apple", "Genius", "SOC", "BrightMinds"],
    "re-ordering an ordered list is a no-op")
 
-# Unparseable / missing dates don't crash and sink to the end (stable among them).
+# Unparseable / missing START dates don't crash and sink to the end (stable).
 messy = order_work_history([
     {"company": "Good", "start": "2022-03", "end": "2023-01"},
     {"company": "NoDates"},
     {"company": "Junk", "start": "not-a-date", "end": "whenever"},
 ])
 mnames = [r["company"] for r in messy]
-# "NoDates"/"Junk" have no end -> ongoing but unparseable start -> sort last within
-# ongoing group; "Good" is ended so it comes after ongoing roles.
+# "Good" has a parseable start -> top; "NoDates"/"Junk" have no parseable start
+# -> sink to the bottom, keeping their original relative order.
 ok("Good" in mnames and len(mnames) == 3, "unparseable dates tolerated, no role lost")
+ok(mnames[0] == "Good", "role with a parseable start ranks above start-less roles")
 ok(mnames.index("NoDates") < mnames.index("Junk"),
    "equal-key roles keep original relative order (stable)")
 
 # No role fields lost through the full format pass.
 fmt54 = format_resume_content(
     {"work_history": RESUME54, "skills": [], "summary": "x"}, job_text="")
-ok([r["company"] for r in fmt54["work_history"]] == ["Apple", "BrightMinds", "Genius", "SOC"],
+ok([r["company"] for r in fmt54["work_history"]] == ["Apple", "Genius", "SOC", "BrightMinds"],
    "format_resume_content applies reverse-chronological ordering")
 ok(len(fmt54["work_history"]) == 4 and all("title" in r for r in fmt54["work_history"]),
    "all roles + fields preserved through the format pass")
@@ -351,8 +362,8 @@ RESUME55 = [
     {"company": "SOC", "title": "SOC Analyst", "start": "2023-06", "end": "2024-02"},
 ]
 ord55 = [r["company"] for r in order_work_history(RESUME55)]
-ok(ord55 == ["Apple", "BrightMinds", "Genius", "SOC"],
-   f"end='None' (string) sorts as ongoing (top, start desc): {ord55}")
+ok(ord55 == ["Apple", "Genius", "SOC", "BrightMinds"],
+   f"end='None' still treated as ongoing; sort by start date: {ord55}")
 
 # Other nullish sentinels also count as ongoing.
 for sentinel in ("none", "null", "", "N/A", "-"):
@@ -369,7 +380,7 @@ apple = next(r for r in fmt55["work_history"] if r["company"] == "Apple")
 bright = next(r for r in fmt55["work_history"] if r["company"] == "BrightMinds")
 ok(apple["end"] is None and bright["end"] is None,
    "end 'None' (string) normalized to real None in content")
-ok([r["company"] for r in fmt55["work_history"]] == ["Apple", "BrightMinds", "Genius", "SOC"],
+ok([r["company"] for r in fmt55["work_history"]] == ["Apple", "Genius", "SOC", "BrightMinds"],
    "resume-55 reorders correctly through the full format pass")
 
 # The reformat pass MUST see this as a change (so stale resumes get fixed).
