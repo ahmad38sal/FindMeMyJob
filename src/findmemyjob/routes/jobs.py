@@ -50,6 +50,7 @@ from findmemyjob.sources.greenhouse import GreenhouseSource
 from findmemyjob.sources.hn_whoishiring import HNWhoIsHiringSource
 from findmemyjob.sources.lever import LeverSource
 from findmemyjob.sources.remoteok import RemoteOKSource
+from findmemyjob.sources.serpapi import GoogleJobsSource
 from findmemyjob.tailoring import compute_diff, generate_cover_letter, tailor_resume
 
 router = APIRouter()
@@ -205,6 +206,16 @@ def _build_sources(profile_dict: Dict) -> List:
         sources.append(RemoteOKSource())
     if prefs.get("enable_hn_whoishiring"):
         sources.append(HNWhoIsHiringSource(limit=int(prefs.get("hn_limit") or 40)))
+
+    # Google Jobs (SerpApi) — always registered. No-ops to [] until the
+    # SERPAPI_API_KEY env var is set, so discovery runs fine without a key.
+    locations = prefs.get("locations") or []
+    contact = profile_dict.get("contact") or {}
+    gj_location = (locations[0] if locations else None) or contact.get("location") or None
+    sources.append(GoogleJobsSource(
+        location=gj_location,
+        max_pages=int(prefs.get("google_jobs_max_pages") or 3),
+    ))
 
     return sources
 
