@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from findmemyjob.llm import DEFAULT_TAILOR_MODEL, llm
 from findmemyjob.matching import _strip_code_fence
 from findmemyjob.models import ExperienceItem, Job
+from findmemyjob.resume_format import format_resume_content
 
 
 class TailoredResume(BaseModel):
@@ -73,6 +74,30 @@ same footing as a master-profile bullet. When notes are provided:
   - Do NOT fabricate facts, metrics, or scope beyond what a note literally
     states. A note is a claim, not a license to embellish.
   - Notes tagged "(linked to THIS job)" are the most relevant — prioritize them.
+
+RESUME FORMATTING BEST PRACTICES (follow for strong, ATS-friendly output):
+  Bullets:
+    - Bullet COUNT per role scales with recency/relevance: the most recent /
+      most relevant role gets 4-6 bullets, mid roles 3-4, older/less-relevant
+      roles 2-3. Never exceed 6 on any role. Keep the bullets most relevant to
+      THIS job; drop the weakest rather than padding.
+    - Each bullet is ONE concise line: aim ~90-140 characters, never exceed
+      ~160. Tighten wordy bullets (keep the metric + impact) instead of running
+      long.
+    - Start every bullet with a strong past-tense action verb (Led, Built,
+      Shipped, Reduced, Automated, Designed, Launched…). Avoid weak openers
+      ("Responsible for", "Worked on", "Helped with") and first-person pronouns.
+    - Prefer quantified impact (numbers/%/time) when the source has it; never
+      invent metrics.
+  Skills:
+    - Emit SHORT tags only (1-4 words each): "React", "Docker", "DTC Creative
+      Strategy", "Meta Ads Manager". NEVER copy job-requirement sentences or
+      phrases like "3-5+ years of experience in ..." into the skills list.
+    - Deduplicate and merge synonyms (React.js/ReactJS -> React). Aim for ~8-16
+      tags total — don't pad or bloat.
+    - CATEGORIZE each skill (set `category`) using sensible buckets such as
+      Languages, Frameworks & Libraries, Tools & Platforms, Cloud & DevOps,
+      Design, Marketing/Domain. Use "Other" only as a last resort.
 
 Return STRICT JSON (no commentary, no markdown) with this shape:
 {
@@ -208,7 +233,14 @@ def tailor_resume(
         temperature=0.4,
     )
     tailored = _parse_tailored(raw, profile_dict)
-    return _apply_options(tailored, include_summary, page_length)
+    tailored = _apply_options(tailored, include_summary, page_length)
+    # Enforce resume best practices deterministically — even when the LLM drifts
+    # or the parser fell back to the raw master profile.
+    job_text = f"{job.title or ''} {job.description or ''}"
+    formatted = format_resume_content(
+        tailored.model_dump(), job_text=job_text, page_length=page_length
+    )
+    return TailoredResume(**formatted)
 
 
 def _parse_tailored(raw: str, profile_dict: Dict[str, Any]) -> TailoredResume:
