@@ -37,6 +37,100 @@ def resume_content_hash(content: Any) -> str:
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 # ---------------------------------------------------------------------------
+# Work-history ordering (reverse-chronological)
+# ---------------------------------------------------------------------------
+
+# An empty/absent end date, or these words, means the role is ongoing.
+_ONGOING_END = {"", "present", "current", "now", "ongoing", "presently", "date"}
+
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7,
+    "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "june": 6, "july": 7,
+    "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
+def _is_ongoing(end: Any) -> bool:
+    """True when a role has no end date (still ongoing)."""
+    if end is None:
+        return True
+    return str(end).strip().lower() in _ONGOING_END
+
+
+def _month_ordinal(value: Any) -> int | None:
+    """Parse a resume date string to a comparable ``year*12 + month`` ordinal.
+
+    Handles ``YYYY-MM``, ``YYYY/MM``, ``MM/YYYY``, ``YYYY``, and
+    ``Mon YYYY`` / ``Month YYYY``. Returns None when unparseable (sorts oldest).
+    """
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    if not s or s in _ONGOING_END:
+        return None
+
+    # Month-name form: "Jan 2024", "March 2019".
+    m = re.match(r"^([a-z]+)\.?\s+(\d{4})$", s)
+    if m and m.group(1) in _MONTHS:
+        return int(m.group(2)) * 12 + _MONTHS[m.group(1)]
+
+    # Numeric forms with a separator.
+    m = re.match(r"^(\d{1,4})[-/](\d{1,4})$", s)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        # Decide which side is the year (4-digit or the larger value).
+        if a >= 1000:            # YYYY-MM
+            year, month = a, b
+        elif b >= 1000:          # MM/YYYY
+            year, month = b, a
+        else:                    # ambiguous 2-digit/2-digit — treat first as year
+            year, month = a, b
+        month = month if 1 <= month <= 12 else 0
+        return year * 12 + month
+
+    # Bare year.
+    m = re.match(r"^(\d{4})$", s)
+    if m:
+        return int(m.group(1)) * 12
+
+    return None
+
+
+def order_work_history(work_history: Any) -> List[Any]:
+    """Return roles sorted strictly reverse-chronological (pure, stable, idempotent).
+
+    Order:
+      1. Ongoing roles (no end date) first, by START date descending.
+      2. Then ended roles by END date descending; tie-break START date descending.
+      3. Identical keys preserve original relative order (stable).
+
+    Non-dict entries and unparseable dates are tolerated (sorted oldest, never
+    dropped). No role fields are mutated — only the list order changes.
+    """
+    if not isinstance(work_history, list):
+        return work_history
+
+    _OLD = -1  # ordinal sentinel for a missing/unparseable date (sorts oldest)
+
+    def sort_key(pair):
+        idx, role = pair
+        if not isinstance(role, dict):
+            # Non-dict rows sink to the very end but keep their relative order.
+            return (2, 0, 0, idx)
+        ongoing = _is_ongoing(role.get("end"))
+        start = _month_ordinal(role.get("start"))
+        start = start if start is not None else _OLD
+        if ongoing:
+            return (0, -start, 0, idx)
+        end = _month_ordinal(role.get("end"))
+        end = end if end is not None else _OLD
+        return (1, -end, -start, idx)
+
+    return [role for _, role in sorted(enumerate(work_history), key=sort_key)]
+
+
+# ---------------------------------------------------------------------------
 # Bullets
 # ---------------------------------------------------------------------------
 
@@ -514,8 +608,11 @@ def format_resume_content(
     out = dict(content or {})
     keywords = job_keyword_set(job_text)
 
+    # Reverse-chronological order first, so per-index bullet caps follow recency.
+    ordered_wh = order_work_history(out.get("work_history") or [])
+
     new_wh: List[Dict[str, Any]] = []
-    for i, role in enumerate(out.get("work_history") or []):
+    for i, role in enumerate(ordered_wh):
         if not isinstance(role, dict):
             continue
         role = dict(role)

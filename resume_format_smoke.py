@@ -22,6 +22,7 @@ from findmemyjob.resume_format import (  # noqa: E402
     categorize_skill,
     format_resume_content,
     normalize_skills,
+    order_work_history,
     tighten_bullet,
 )
 
@@ -280,6 +281,62 @@ ok(cats.get("Docker") == "Cloud & DevOps" and cats.get("Kubernetes") == "Cloud &
 ok(cats.get("Jira") == "Tools & Platforms", "Jira -> Tools & Platforms")
 ok("JFrog Artifactory" in cats and "Jfrog Artifactory" not in cats,
    "JFrog casing preserved (not 'Jfrog')")
+
+# ---------------------------------------------------------------------------
+# (h) work-history ordering: reverse-chronological, ongoing first, stable
+# ---------------------------------------------------------------------------
+print("\n[work-history: reverse-chronological ordering]")
+
+# Exact resume-54 role set (see BUILD_SPEC_work_history_order.md).
+RESUME54 = [
+    {"company": "BrightMinds", "title": "Engineer", "start": "2019-06", "end": None},
+    {"company": "Apple", "title": "Staff Engineer", "start": "2026-01", "end": "Present"},
+    {"company": "Genius", "title": "Analyst", "start": "2024-02", "end": "2025-12"},
+    {"company": "SOC", "title": "SOC Analyst", "start": "2023-06", "end": "2024-02"},
+]
+ordered = order_work_history(RESUME54)
+order_names = [r["company"] for r in ordered]
+ok(order_names == ["Apple", "BrightMinds", "Genius", "SOC"],
+   f"resume-54 orders Apple->BrightMinds->Genius->SOC (got {order_names})")
+
+# Two ongoing roles order by start desc.
+two_ongoing = order_work_history([
+    {"company": "Old", "start": "2019-01", "end": None},
+    {"company": "New", "start": "2023-05", "end": "Present"},
+])
+ok([r["company"] for r in two_ongoing] == ["New", "Old"],
+   "two ongoing roles order by start descending")
+
+# Idempotency + stability.
+once_o = order_work_history(RESUME54)
+twice_o = order_work_history(once_o)
+ok(once_o == twice_o, "order_work_history is idempotent")
+ok([r["company"] for r in twice_o] == ["Apple", "BrightMinds", "Genius", "SOC"],
+   "re-ordering an ordered list is a no-op")
+
+# Unparseable / missing dates don't crash and sink to the end (stable among them).
+messy = order_work_history([
+    {"company": "Good", "start": "2022-03", "end": "2023-01"},
+    {"company": "NoDates"},
+    {"company": "Junk", "start": "not-a-date", "end": "whenever"},
+])
+mnames = [r["company"] for r in messy]
+# "NoDates"/"Junk" have no end -> ongoing but unparseable start -> sort last within
+# ongoing group; "Good" is ended so it comes after ongoing roles.
+ok("Good" in mnames and len(mnames) == 3, "unparseable dates tolerated, no role lost")
+ok(mnames.index("NoDates") < mnames.index("Junk"),
+   "equal-key roles keep original relative order (stable)")
+
+# No role fields lost through the full format pass.
+fmt54 = format_resume_content(
+    {"work_history": RESUME54, "skills": [], "summary": "x"}, job_text="")
+ok([r["company"] for r in fmt54["work_history"]] == ["Apple", "BrightMinds", "Genius", "SOC"],
+   "format_resume_content applies reverse-chronological ordering")
+ok(len(fmt54["work_history"]) == 4 and all("title" in r for r in fmt54["work_history"]),
+   "all roles + fields preserved through the format pass")
+p1_54 = format_resume_content({"work_history": RESUME54, "skills": []}, job_text="")
+p2_54 = format_resume_content(p1_54, job_text="")
+ok(p1_54 == p2_54, "format pass with ordering is idempotent")
 
 print("\n" + "=" * 40)
 if failures:
