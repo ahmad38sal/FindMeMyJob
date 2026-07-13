@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>{{ contact.get("name", "Resume") }}</title>
+    <title>{{ contact.get("name", "") | clean or "Resume" }}</title>
     <style>
         @page { size: Letter; margin: 0.55in 0.6in; }
 
@@ -91,22 +91,22 @@
 <body>
 
 <header class="name-block">
-    <h1 class="name">{{ contact.get("name", "") }}</h1>
+    <h1 class="name">{{ contact.get("name", "") | clean }}</h1>
     <div class="contact">
         {% set parts = [] %}
-        {% if contact.get("email") %}{% set _ = parts.append(contact["email"]) %}{% endif %}
-        {% if contact.get("phone") %}{% set _ = parts.append(contact["phone"]) %}{% endif %}
-        {% if contact.get("location") %}{% set _ = parts.append(contact["location"]) %}{% endif %}
-        {% if contact.get("linkedin") %}{% set _ = parts.append("LinkedIn: " ~ contact["linkedin"]) %}{% endif %}
-        {% if contact.get("github") %}{% set _ = parts.append("GitHub: " ~ contact["github"]) %}{% endif %}
-        {% if contact.get("portfolio") %}{% set _ = parts.append(contact["portfolio"]) %}{% endif %}
+        {% if contact.get("email") | clean %}{% set _ = parts.append(contact["email"] | clean) %}{% endif %}
+        {% if contact.get("phone") | clean %}{% set _ = parts.append(contact["phone"] | clean) %}{% endif %}
+        {% if contact.get("location") | clean %}{% set _ = parts.append(contact["location"] | clean) %}{% endif %}
+        {% if contact.get("linkedin") | clean %}{% set _ = parts.append("LinkedIn: " ~ contact["linkedin"] | clean) %}{% endif %}
+        {% if contact.get("github") | clean %}{% set _ = parts.append("GitHub: " ~ contact["github"] | clean) %}{% endif %}
+        {% if contact.get("portfolio") | clean %}{% set _ = parts.append(contact["portfolio"] | clean) %}{% endif %}
         {% for p in parts %}{{ p }}{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor %}
     </div>
 </header>
 
-{% if summary %}
+{% if summary | clean %}
 <h2 class="section">Summary</h2>
-<p class="summary">{{ summary }}</p>
+<p class="summary">{{ summary | clean }}</p>
 {% endif %}
 
 {% if work_history %}
@@ -115,18 +115,18 @@
 <div class="role">
     <div class="role-head">
         <div>
-            <span class="role-title">{{ r.get("title", "") }}</span>
-            {% if r.get("company") %}<span class="role-company"> — {{ r["company"] }}</span>{% endif %}
+            <span class="role-title">{{ r.get("title", "") | clean }}</span>
+            {% if r.get("company") | clean %}<span class="role-company"> — {{ r["company"] | clean }}</span>{% endif %}
         </div>
         <div class="role-dates">
-            {% set _end = r.get("end") %}
-            {{ r.get("start", "") }}{% if _end and _end|string|lower not in ["none", "null", "n/a", "na", "-"] %} – {{ _end }}{% else %} – Present{% endif %}
+            {% set _end = r.get("end") | clean %}
+            {{ r.get("start", "") | clean }}{% if _end %} – {{ _end }}{% else %} – Present{% endif %}
         </div>
     </div>
-    {% if r.get("location") %}<div class="role-meta">{{ r["location"] }}</div>{% endif %}
+    {% if r.get("location") | clean %}<div class="role-meta">{{ r["location"] | clean }}</div>{% endif %}
     {% if r.get("bullets") %}
     <ul class="bullets">
-        {% for b in r["bullets"] %}<li>{{ b }}</li>{% endfor %}
+        {% for b in r["bullets"] %}{% if b | clean %}<li>{{ b | clean }}</li>{% endif %}{% endfor %}
     </ul>
     {% endif %}
 </div>
@@ -139,18 +139,18 @@
 <div class="edu">
     <div class="edu-head">
         <div>
-            <span class="edu-school">{{ e.get("school", "") }}</span>
-            {% if e.get("degree") %} — {{ e["degree"] }}{% endif %}
-            {% if e.get("field") %}, {{ e["field"] }}{% endif %}
+            <span class="edu-school">{{ e.get("school", "") | clean }}</span>
+            {% if e.get("degree") | clean %} — {{ e["degree"] | clean }}{% endif %}
+            {% if e.get("field") | clean %}, {{ e["field"] | clean }}{% endif %}
         </div>
         <div class="edu-meta">
-            {% set _eend = e.get("end") %}
-            {{ e.get("start", "") }}{% if _eend and _eend|string|lower not in ["none", "null", "n/a", "na", "-"] %} – {{ _eend }}{% endif %}
+            {% set _eend = e.get("end") | clean %}
+            {{ e.get("start", "") | clean }}{% if _eend %} – {{ _eend }}{% endif %}
         </div>
     </div>
-    {% if e.get("gpa") %}<div class="role-meta">GPA: {{ e["gpa"] }}</div>{% endif %}
+    {% if e.get("gpa") | clean %}<div class="role-meta">GPA: {{ e["gpa"] | clean }}</div>{% endif %}
     {% if e.get("highlights") %}
-    <ul class="bullets">{% for h in e["highlights"] %}<li>{{ h }}</li>{% endfor %}</ul>
+    <ul class="bullets">{% for h in e["highlights"] %}{% if h | clean %}<li>{{ h | clean }}</li>{% endif %}{% endfor %}</ul>
     {% endif %}
 </div>
 {% endfor %}
@@ -160,12 +160,15 @@
 <h2 class="section">Skills</h2>
 {% set by_cat = {} %}
 {% for s in skills %}
-    {% set cat = s.get("category") or "Other" %}
-    {% if cat not in by_cat %}{% set _ = by_cat.update({cat: []}) %}{% endif %}
-    {% set _ = by_cat[cat].append(s.get("name", "")) %}
+    {% set cat = s.get("category") | clean or "Other" %}
+    {% set _name = s.get("name", "") | clean %}
+    {% if _name %}
+        {% if cat not in by_cat %}{% set _ = by_cat.update({cat: []}) %}{% endif %}
+        {% set _ = by_cat[cat].append(_name) %}
+    {% endif %}
 {% endfor %}
 {% for cat, names in by_cat.items() %}
-<p class="skills-line"><span class="skills-cat">{{ cat }}:</span> {{ names | join(", ") }}</p>
+{% if names %}<p class="skills-line"><span class="skills-cat">{{ cat }}:</span> {{ names | join(", ") }}</p>{% endif %}
 {% endfor %}
 {% endif %}
 
@@ -174,8 +177,9 @@
 {% for c in certifications %}
 <div class="edu">
     <div class="edu-head">
-        <div><span class="edu-school">{{ c.get("name", "") }}</span>{% if c.get("issuer") %} — {{ c["issuer"] }}{% endif %}</div>
-        <div class="edu-meta">{{ c.get("date_earned", "") }}</div>
+        <div><span class="edu-school">{{ c.get("name", "") | clean }}</span>{% if c.get("issuer") | clean %} — {{ c["issuer"] | clean }}{% endif %}</div>
+        {% set _cdate = c.get("date_earned") | clean %}
+        {% if _cdate %}<div class="edu-meta">{{ _cdate }}</div>{% endif %}
     </div>
 </div>
 {% endfor %}

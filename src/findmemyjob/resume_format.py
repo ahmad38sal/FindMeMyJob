@@ -620,8 +620,10 @@ def format_resume_content(
 ) -> Dict[str, Any]:
     """Enforce the formatting rules on a tailored resume ``content`` dict.
 
-    Pure and idempotent. Only ``work_history`` bullets and ``skills`` are
-    rewritten; summary/education/keywords pass through untouched.
+    Pure and idempotent. ``work_history`` bullets and ``skills`` are rewritten;
+    stringified-null sentinels in ``work_history``/``education`` date & GPA
+    fields are normalized to real None (so "GPA: None" / "– None" never render);
+    summary/keywords pass through untouched.
     """
     out = dict(content or {})
     keywords = job_keyword_set(job_text)
@@ -646,6 +648,20 @@ def format_resume_content(
         role["bullets"] = [b for b in (tighten_bullet(x) for x in kept) if b]
         new_wh.append(role)
     out["work_history"] = new_wh
+
+    # Clean stringified-null sentinels in education (gpa/start/end) so a missing
+    # value is stored as real None, not the word "None"/"null".
+    education = out.get("education")
+    if isinstance(education, list):
+        new_edu: List[Any] = []
+        for e in education:
+            if isinstance(e, dict):
+                e = dict(e)
+                for k in ("gpa", "start", "end"):
+                    if k in e:
+                        e[k] = _clean_date_field(e.get(k))
+            new_edu.append(e)
+        out["education"] = new_edu
 
     out["skills"] = normalize_skills(out.get("skills"))
     return out

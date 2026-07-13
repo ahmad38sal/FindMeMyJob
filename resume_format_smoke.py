@@ -386,6 +386,55 @@ p1_55 = format_resume_content({"work_history": RESUME55, "skills": []}, job_text
 p2_55 = format_resume_content(p1_55, job_text="")
 ok(p1_55 == p2_55, "format pass idempotent after null-date normalization")
 
+# Education gpa/start/end sentinels normalized to real None.
+fmt_edu = format_resume_content(
+    {"work_history": [],
+     "education": [{"school": "MIT", "degree": "BS", "field": "CS",
+                    "start": "2011", "end": "None", "gpa": "None"}],
+     "skills": []},
+    job_text="")
+edu0 = fmt_edu["education"][0]
+ok(edu0["gpa"] is None and edu0["end"] is None,
+   "education gpa/end 'None' normalized to real None")
+
+# ---------------------------------------------------------------------------
+# (j) rendered resume.html never leaks the literal word "None"
+# ---------------------------------------------------------------------------
+print("\n[template render: no literal 'None' leaks]")
+# Import the configured Jinja env (registers the `clean` filter).
+from findmemyjob.pdf import _jinja  # noqa: E402
+import re as _re  # noqa: E402
+
+_tpl = _jinja.get_template("resume.html")
+html = _tpl.render(
+    contact={"name": "Grace Hopper", "email": "grace@example.com",
+             "phone": None, "location": "None", "linkedin": "null"},
+    summary="Engineer.",
+    work_history=[
+        {"title": "Staff Engineer", "company": "Apple", "start": "2026-01",
+         "end": "None", "location": None, "bullets": ["Led migration to GKE", "None"]},
+        {"title": "Analyst", "company": "Genius", "start": "2024-02",
+         "end": "2025-12", "bullets": ["Built dashboards"]},
+    ],
+    # Education entry MISSING gpa (renders GPA: None before the fix).
+    education=[{"school": "MIT", "degree": "BS", "field": "CS",
+                "start": "2011", "end": "2015", "gpa": None}],
+    skills=[{"name": "Python", "category": "Languages"},
+            {"name": "None", "category": None}],
+    # Certification MISSING date (renders trailing "None" before the fix).
+    certifications=[{"name": "CompTIA A+", "issuer": "CompTIA", "date_earned": None},
+                    {"name": "AZ-900", "issuer": "Microsoft", "date_earned": "None"}],
+)
+
+# No standalone word "None" (word-boundary) anywhere in the rendered output.
+none_hits = _re.findall(r"\bNone\b", html)
+ok(not none_hits, f"rendered resume contains no standalone 'None' (found {len(none_hits)})")
+ok("null" not in html.lower().replace("nullish", ""), "no leaked 'null' in output")
+ok("GPA:" not in html, "GPA line omitted entirely when gpa is missing")
+ok("2026-01 – Present" in html, "ongoing role (end='None') renders as 'Present'")
+ok("CompTIA A+" in html and "AZ-900" in html, "certifications still render their names")
+ok("Led migration to GKE" in html, "real content still renders")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")

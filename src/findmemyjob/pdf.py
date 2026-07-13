@@ -24,6 +24,25 @@ from findmemyjob.config import settings
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _jinja = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
 
+# Values that must never surface on a resume as literal text. Stringified nulls
+# ("None"/"null") are an artifact of an earlier path that str()'d Python None.
+_NULLISH_TEXT = {"", "none", "null", "n/a", "na", "-"}
+
+
+def _clean(value: Any) -> str:
+    """Render an optional field safely: None / "None" / "null" / "" -> "".
+
+    Used in templates so a missing optional value is omitted rather than
+    printing the literal word "None". Real values pass through untouched.
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    return "" if s.lower() in _NULLISH_TEXT else s
+
+
+_jinja.filters["clean"] = _clean
+
 # Resume PDFs are regenerated in place after a manual edit; the download URL is
 # stable, so without these the browser serves a stale cached copy.
 PDF_NO_CACHE_HEADERS = {
