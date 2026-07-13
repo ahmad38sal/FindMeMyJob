@@ -143,6 +143,79 @@ twice = format_resume_content(once, job_text=JOB, page_length="auto")
 ok(once == twice, "pass is idempotent (running twice is a no-op)")
 ok("summary" in out and out["summary"] == "Engineer.", "summary passes through untouched")
 
+# ---------------------------------------------------------------------------
+# (e) bullets never end mid-word or on a dangling connective (issue 1)
+# ---------------------------------------------------------------------------
+print("\n[bullets: clause-based trim, no mid-word / dangling connective]")
+_CONNECTIVES = {
+    "and", "or", "the", "a", "an", "to", "of", "for", "with", "in", "on", "by",
+    "at", "as", "that", "which", "into", "from", "via", "&",
+}
+# A long bullet with natural clause boundaries (commas + "and").
+BULLET_CLAUSES = (
+    "Led end-to-end creative production for direct-response campaigns, owning "
+    "initial audience research, scripting, and editing while translating the "
+    "product/expert mechanism, proof, and offer into scroll-stopping hooks"
+)
+# A long run-on with NO clause boundary before the limit (forces word-cut path).
+BULLET_RUNON = (
+    "Developed a comprehensive scalable maintainable observability platform "
+    "providing realtime actionable insights across distributed heterogeneous "
+    "microservice deployments worldwide continuously without interruption"
+)
+
+
+def _ends_ok(b, source):
+    if len(b) > BULLET_HARD_MAX:
+        return False
+    last = b.split()[-1].strip(".,;:()&-").lower()
+    if not last or last in _CONNECTIVES:
+        return False
+    if b.rstrip()[-1] in ",;:-–—&":
+        return False
+    src_tokens = {w.strip(".,;:()/").lower() for w in source.split()}
+    return last.split("/")[-1] in src_tokens or last in src_tokens
+
+
+for raw in (BULLET_CLAUSES, BULLET_RUNON):
+    t = tighten_bullet(raw)
+    ok(_ends_ok(t, raw),
+       f"bullet ends on a whole word, no dangling connective, <= {BULLET_HARD_MAX} "
+       f"(got ...{t[-40:]!r}, len {len(t)})")
+
+# ---------------------------------------------------------------------------
+# (f) skill extraction: compound tokens, canonical tags, proper-noun casing
+# ---------------------------------------------------------------------------
+print("\n[skills: compound tokens + canonical tags + proper-noun casing]")
+
+t1 = [s["name"] for s in normalize_skills(
+    [{"name": "UX/UI collaboration and human-centered design experience"}])]
+ok(t1 == ["UX/UI", "Human-Centered Design"],
+   f"'UX/UI collaboration and human-centered design experience' -> {t1}")
+
+t2 = [s["name"] for s in normalize_skills(
+    [{"name": "Deep React component architecture and design system translation (Figma to React)"}])]
+ok(t2 == ["React", "Design Systems", "Figma"],
+   f"'Deep React ... (Figma to React)' -> {t2}")
+
+ok("UX/UI" in t1 and "UI Collaboration" not in t1,
+   "UX/UI kept intact as one tag (not split into 'UX' + 'UI ...')")
+
+casing = {s["name"] for s in normalize_skills(
+    [{"name": "CapCut"}, {"name": "capcut"}, {"name": "github"},
+     {"name": "tiktok"}, {"name": "node.js"}, {"name": "postgresql"}])}
+ok("CapCut" in casing and "Capcut" not in casing, "CapCut casing preserved (not 'Capcut')")
+ok("GitHub" in casing and "TikTok" in casing, "GitHub / TikTok casing preserved")
+ok("Node.js" in casing and "PostgreSQL" in casing, "Node.js / PostgreSQL casing preserved")
+
+sk_in = [{"name": "UX/UI collaboration and human-centered design experience"},
+         {"name": "Deep React component architecture and design system translation (Figma to React)"},
+         {"name": "CapCut"}]
+once_sk = normalize_skills(sk_in)
+twice_sk = normalize_skills([{"name": s["name"]} for s in once_sk])
+ok([s["name"] for s in once_sk] == [s["name"] for s in twice_sk],
+   "skill normalization is idempotent on refined inputs")
+
 print("\n" + "=" * 40)
 if failures:
     print("FAILURES:")

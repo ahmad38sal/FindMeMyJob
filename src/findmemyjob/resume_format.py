@@ -45,11 +45,15 @@ _WEAK_OPENERS = [
     "in charge of", "assisted with", "assisted in", "involved in",
 ]
 
-# Trailing tokens that shouldn't be left dangling after a word-boundary trim.
+# Trailing tokens that shouldn't be left dangling after a trim.
 _TRAILING_DROP = {
     "and", "or", "the", "a", "an", "to", "of", "for", "with", "in", "on", "by",
-    "at", "as", "that", "which", "into", "from", "via",
+    "at", "as", "that", "which", "into", "from", "via", "&",
 }
+
+# Natural clause boundaries: sentence end, comma/semicolon, dash, or "and"/"&".
+# Kept as a capturing split so we can rebuild only the clauses that fit.
+_CLAUSE_SPLIT_RE = re.compile(r"(\s*(?:[;,]|—|–|\band\b|&|\.)\s+)", re.I)
 
 
 def _clean_ws(s: Any) -> str:
@@ -72,12 +76,48 @@ def _strip_weak_opener(s: str) -> str:
     return s
 
 
+def _drop_dangling(s: str) -> str:
+    """Strip trailing punctuation and any dangling connective words."""
+    s = s.rstrip(" ,;:.-–—&")
+    words = s.split()
+    while words and words[-1].lower().strip(".,;:&") in _TRAILING_DROP:
+        words.pop()
+    return " ".join(words)
+
+
+def _trim_to_clauses(s: str, hard_max: int) -> str:
+    """Keep as many leading whole clauses as fit under *hard_max*.
+
+    Splits on natural boundaries (sentence end, comma/semicolon, dash, "and")
+    and greedily rebuilds from the front, so the result always ends on a
+    complete clause — never a partial word or a dangling connective. Returns
+    "" when the very first clause already exceeds the limit (no safe boundary).
+    """
+    parts = _CLAUSE_SPLIT_RE.split(s)
+    if len(parts) <= 1:
+        return ""
+    # parts alternates: clause, delimiter, clause, delimiter, ..., clause.
+    acc = ""       # confirmed-kept text incl. trailing delimiter for the next join
+    result = ""    # confirmed-kept text without a trailing delimiter
+    for i in range(0, len(parts), 2):
+        clause = parts[i]
+        delim = parts[i + 1] if i + 1 < len(parts) else ""
+        candidate = acc + clause
+        if candidate.strip() and len(candidate) <= hard_max:
+            result = candidate
+            acc = candidate + delim
+        else:
+            break
+    return result
+
+
 def tighten_bullet(text: Any, hard_max: int = BULLET_HARD_MAX) -> str:
     """Clean one bullet: strip weak opener, collapse ws, capitalize, cap length.
 
-    Never truncates mid-word — if the bullet is still over ``hard_max`` after
-    cleanup, it's cut at the last word boundary and trailing connectives are
-    dropped so the result reads as a complete (if shorter) phrase.
+    Never truncates mid-word. If the bullet is over ``hard_max`` after cleanup,
+    whole trailing clauses are dropped at natural boundaries so it ends as a
+    complete thought. Only if a single clause is itself too long do we fall back
+    to a word-boundary cut, dropping any dangling connective.
     """
     s = _clean_ws(text)
     if not s:
@@ -86,14 +126,14 @@ def tighten_bullet(text: Any, hard_max: int = BULLET_HARD_MAX) -> str:
     s = s[0].upper() + s[1:]
     if len(s) <= hard_max:
         return s
+    trimmed = _trim_to_clauses(s, hard_max)
+    if trimmed:
+        return _drop_dangling(trimmed)
+    # Fallback: no clause boundary before the limit — cut at last whole word.
     cut = s[:hard_max]
     if " " in cut:
         cut = cut[: cut.rfind(" ")]
-    cut = cut.rstrip(" ,;:.-–—")
-    words = cut.split()
-    while words and words[-1].lower().strip(".,;:") in _TRAILING_DROP:
-        words.pop()
-    return " ".join(words)
+    return _drop_dangling(cut)
 
 
 _STOPWORDS = {
@@ -132,7 +172,9 @@ def select_bullets(bullets: List[str], keywords: set, cap: int) -> List[str]:
 # Skills → short, categorized, deduped tags
 # ---------------------------------------------------------------------------
 
-# Canonical display forms for common surface variants (merged synonyms).
+# Canonical display forms for common surface variants (merged synonyms). This is
+# also where proper-noun tools get their exact internal capitalization, so we
+# never naively title-case a name like CapCut -> "Capcut".
 _CANON = {
     "react.js": "React", "reactjs": "React", "react": "React",
     "vue.js": "Vue", "vuejs": "Vue", "vue": "Vue",
@@ -151,6 +193,36 @@ _CANON = {
     "google ads": "Google Ads", "dtc": "DTC",
     "performance marketing": "Performance Marketing",
     "dtc creative strategy": "DTC Creative Strategy",
+    # Proper-noun tools (correct internal capitalization).
+    "capcut": "CapCut", "github": "GitHub", "gitlab": "GitLab",
+    "davinci resolve": "DaVinci Resolve", "davinci": "DaVinci Resolve",
+    "premiere pro": "Premiere Pro", "premiere": "Premiere Pro",
+    "after effects": "After Effects", "photoshop": "Photoshop",
+    "illustrator": "Illustrator", "indesign": "InDesign",
+    "figma": "Figma", "sketch": "Sketch",
+    "google analytics": "Google Analytics", "youtube": "YouTube",
+    "wordpress": "WordPress", "mysql": "MySQL", "mongodb": "MongoDB",
+    "dynamodb": "DynamoDB", "graphql": "GraphQL", "openai": "OpenAI",
+    "chatgpt": "ChatGPT", "nextjs": "Next.js", "next.js": "Next.js",
+    # Compound / phrase skills (kept intact, canonicalized).
+    "ux/ui": "UX/UI", "ui/ux": "UX/UI",
+    "human-centered design": "Human-Centered Design",
+    "human centered design": "Human-Centered Design",
+    "design system": "Design Systems", "design systems": "Design Systems",
+    "a/b testing": "A/B Testing",
+}
+
+# Compound tokens whose internal "/" must NOT be treated as a split boundary.
+_COMPOUND_TOKENS = ("ux/ui", "ui/ux", "ci/cd", "a/b", "tcp/ip", "i/o")
+
+# Filler words removed from an extracted skill phrase before matching a tag.
+_FILLER_WORDS = {
+    "deep", "strong", "solid", "proven", "demonstrated", "advanced", "excellent",
+    "good", "great", "extensive", "modern", "hands-on", "expertise", "expert",
+    "knowledge", "proficiency", "proficient", "understanding", "familiarity",
+    "experience", "experienced", "collaboration", "collaborating", "skills",
+    "skill", "ability", "component", "components", "architecture", "translation",
+    "based", "level", "years", "year", "cross-functional", "end-to-end",
 }
 
 _ACRONYMS = {
@@ -176,13 +248,16 @@ _CATEGORY_SETS = {
         "microservices", "observability", "devops",
     },
     "Tools & Platforms": {
-        "git", "jira", "tableau", "power bi", "excel", "salesforce", "hubspot",
-        "snowflake", "bigquery", "redshift", "airflow", "dbt", "looker",
-        "segment", "google analytics", "ga4", "mixpanel", "amplitude", "notion",
+        "git", "github", "gitlab", "jira", "tableau", "power bi", "excel",
+        "salesforce", "hubspot", "snowflake", "bigquery", "redshift", "airflow",
+        "dbt", "looker", "segment", "google analytics", "ga4", "mixpanel",
+        "amplitude", "notion", "wordpress",
     },
     "Design": {
         "figma", "sketch", "photoshop", "illustrator", "adobe", "ui design",
         "ux design", "wireframing", "prototyping", "indesign", "after effects",
+        "ux/ui", "human-centered design", "design systems", "premiere pro",
+        "davinci resolve", "capcut",
     },
     "Marketing/Domain": {
         "seo", "sem", "ppc", "google ads", "meta ads", "performance marketing",
@@ -190,6 +265,7 @@ _CATEGORY_SETS = {
         "content marketing", "brand strategy", "growth marketing", "crm",
         "copywriting", "paid social", "paid media", "conversion rate optimization",
         "a/b testing", "media buying", "creative strategy", "dtc", "roas",
+        "tiktok", "tiktok ads", "linkedin", "youtube",
     },
 }
 
@@ -269,26 +345,91 @@ _REQ_PREFIX_RES = [
     re.compile(r"^\s*(?:experience|expertise|proficiency|proficient|familiarity|knowledge|ability|strong|proven|demonstrated|understanding|hands[- ]on|background)\s+(?:in|with|of|to|building|using)?\s*", re.I),
 ]
 
+# All enumerated skills across categories, flattened for a "is this a known
+# skill?" membership test (used to salvage tags from noisy phrases).
+_KNOWN_SKILLS = set().union(*_CATEGORY_SETS.values()) | set(_CANON)
+
+
+def _is_known_skill(low: str) -> bool:
+    return low in _CANON or low in _KNOWN_SKILLS
+
+
+def _protect_compounds(s: str):
+    """Mask the "/" inside known compound tokens so the splitter won't break them."""
+    mapping: Dict[str, str] = {}
+    for i, comp in enumerate(_COMPOUND_TOKENS):
+        rx = re.compile(re.escape(comp), re.I)
+        if rx.search(s):
+            placeholder = f"\x00{i}\x00"
+            s = rx.sub(placeholder, s)
+            mapping[placeholder] = comp
+    return s, mapping
+
+
+def _restore(s: str, mapping: Dict[str, str]) -> str:
+    for ph, comp in mapping.items():
+        s = s.replace(ph, comp)
+    return s
+
+
+def _phrase_to_tag(phrase: str) -> str:
+    """Reduce one extracted phrase to a clean canonical tag, or "" to drop it."""
+    p = _clean_ws(phrase).strip(".")
+    if not p:
+        return ""
+    if p.lower() in _CANON:
+        return _CANON[p.lower()]
+    words = [w for w in p.split() if w.lower().strip(".,") not in _FILLER_WORDS]
+    if not words:
+        return ""
+    cleaned = " ".join(words)
+    low = cleaned.lower()
+    if low in _CANON:
+        return _CANON[low]
+    if _is_known_skill(low):
+        return _display_tag(cleaned)
+    first = words[0].lower()
+    if first.endswith("ing") and first not in _OK_LEADING_ING:
+        return ""  # verb-ing lead -> not a noun-phrase skill
+    # Salvage a known tool/skill token embedded in a longer phrase.
+    for w in words:
+        wl = w.lower().strip(".,")
+        if wl in _CANON:
+            return _CANON[wl]
+        if _is_known_skill(wl):
+            return _display_tag(w)
+    if len(words) <= 3:
+        return _display_tag(cleaned)
+    return ""  # still a phrase, not a tag -> drop
+
+
+def _extract_known_from_fragment(fragment: str) -> List[str]:
+    """From a parenthetical, keep only tokens that are already known skills."""
+    out: List[str] = []
+    for p in re.split(r"\s*(?:,| or | and | to |/)\s*", fragment, flags=re.I):
+        p = _clean_ws(p).strip(".")
+        if p and _is_known_skill(p.lower()):
+            out.append(_display_tag(p))
+    return out
+
 
 def _extract_tags_from_sentence(sentence: str) -> List[str]:
-    s = re.sub(r"\([^)]*\)", "", _clean_ws(sentence))  # drop parentheticals
+    text = _clean_ws(sentence)
+    # Parentheticals: keep only recognizable skills (e.g. "(Figma to React)"),
+    # discard noise enumerations (e.g. "(hook, problem, mechanism, proof, CTA)").
+    paren_tags: List[str] = []
+    for frag in re.findall(r"\(([^)]*)\)", text):
+        paren_tags.extend(_extract_known_from_fragment(frag))
+    text = re.sub(r"\([^)]*\)", "", text)
     for rx in _REQ_PREFIX_RES:
-        s = rx.sub("", s)
-    parts = re.split(r"\s*(?:,| or | and |/)\s*", s, flags=re.I)
+        text = rx.sub("", text)
+    protected, mapping = _protect_compounds(text)
     tags: List[str] = []
-    for p in parts:
-        p = _clean_ws(p).strip(".")
-        if not p:
-            continue
-        pw = p.split()
-        if len(pw) > 4:
-            continue  # still a phrase, not a tag -> drop
-        first = pw[0].lower()
-        if first.endswith("ing") and first not in _OK_LEADING_ING:
-            continue  # verb-ing lead -> not a noun-phrase skill
-        tag = _display_tag(p)
+    for part in re.split(r"\s*(?:,| or | and |/)\s*", protected, flags=re.I):
+        tag = _phrase_to_tag(_restore(part, mapping))
         if tag:
             tags.append(tag)
+    tags.extend(paren_tags)
     return tags
 
 
@@ -307,7 +448,7 @@ def normalize_skills(skills: Any, max_tags: int = 16) -> List[Dict[str, str]]:
             continue
         candidates = (
             _extract_tags_from_sentence(name) if _is_sentence_like(name)
-            else [_display_tag(name)]
+            else [_phrase_to_tag(name)]
         )
         for tag in candidates:
             if not tag:
