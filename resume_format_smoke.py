@@ -21,9 +21,11 @@ from findmemyjob.resume_format import (  # noqa: E402
     bullet_cap,
     categorize_skill,
     format_resume_content,
+    job_keyword_set,
     normalize_skills,
     order_work_history,
     tighten_bullet,
+    top_role_bullet_cap,
 )
 
 failures = []
@@ -59,8 +61,12 @@ content = {
 }
 out = format_resume_content(content, job_text=JOB, page_length="auto")
 role0 = out["work_history"][0]
-ok(len(role0["bullets"]) == bullet_cap(0, "auto") == 6,
-   f"11 bullets capped to 6 on recent role (got {len(role0['bullets'])})")
+# These run-on bullets each score high raw, but tighten_bullet collapses them to
+# a weak leading fragment — so no STRONG 6th survives and the top role caps at 5
+# (the cap is decided on the bullets as they render). Base bullet_cap(0) is 5.
+ok(len(role0["bullets"]) == 5,
+   f"run-on bullets tighten to weak -> top role caps at 5 (got {len(role0['bullets'])})")
+ok(bullet_cap(0, "auto") == 5, "top-role base cap (bullet_cap index 0) is now 5")
 ok(all(len(b) <= BULLET_HARD_MAX for b in role0["bullets"]),
    f"every bullet <= {BULLET_HARD_MAX} chars")
 ok(all(not b.lower().startswith("responsible for") for b in role0["bullets"]),
@@ -101,9 +107,83 @@ out_floor = format_resume_content(
     job_text="", page_length="auto")
 ok(len(out_floor["work_history"][0]["bullets"]) == 1, "role with 1 source bullet stays 1 (no fabrication)")
 
-# page_length biases counts
+# page_length biases counts. One-page keeps the top role tight: 5, never 6.
 out_1 = format_resume_content(content_b, job_text="throughput project", page_length="1")
-ok(len(out_1["work_history"][0]["bullets"]) == 4, "page_length=1 caps recent role at 4")
+ok(len(out_1["work_history"][0]["bullets"]) == 5, "page_length=1 caps recent role at 5 (never 6)")
+
+# ---------------------------------------------------------------------------
+# (b2) top-role bullet cap: 5 by default, 6 only when the 6th is strong;
+#      1-page never exceeds 5; non-top roles keep their existing caps.
+# ---------------------------------------------------------------------------
+print("\n[bullets: top-role 5/6-if-strong cap]")
+JOB2 = "Senior data engineer building distributed pipelines on AWS with Python and Kafka"
+KW2 = job_keyword_set(JOB2)
+
+# (a) 7 strong bullets (each carries a job keyword; some a metric) -> top role
+# keeps 6 on auto AND on two-page.
+strong7 = [
+    "Built distributed data pipelines on AWS for analytics",
+    "Scaled Kafka streaming to 2 billion events per day",
+    "Optimized Python services reducing latency by 30 percent",
+    "Migrated data warehouse to Snowflake on AWS",
+    "Automated Python ETL jobs across regions",
+    "Tuned Kafka consumers for higher throughput",
+    "Led AWS cost review cutting spend 40 percent",
+]
+ok(top_role_bullet_cap(strong7, KW2, "auto") == 6, "strong 6th -> top cap 6 on auto")
+ok(top_role_bullet_cap(strong7, KW2, "2") == 6, "strong 6th -> top cap 6 on two-page")
+out_s = format_resume_content(
+    {"work_history": [{"company": "A", "title": "T", "bullets": list(strong7)}], "skills": []},
+    job_text=JOB2, page_length="auto")
+ok(len(out_s["work_history"][0]["bullets"]) == 6, "top role keeps 6 bullets when 6th is strong (auto)")
+
+# (b) 5 strong + 2 weak (no keyword, no metric) -> 6th-best is weak -> keeps 5.
+mixed = [
+    "Built distributed data pipelines on AWS",
+    "Scaled Kafka streaming to 2 billion events",
+    "Optimized Python services for the platform",
+    "Migrated data warehouse to Snowflake",
+    "Automated AWS deployments nightly",
+    "Attended weekly team sync meetings",
+    "Wrote internal documentation for onboarding",
+]
+ok(top_role_bullet_cap(mixed, KW2, "auto") == 5, "weak 6th -> top cap stays 5 on auto")
+out_m = format_resume_content(
+    {"work_history": [{"company": "A", "title": "T", "bullets": list(mixed)}], "skills": []},
+    job_text=JOB2, page_length="auto")
+ok(len(out_m["work_history"][0]["bullets"]) == 5, "top role keeps only 5 when extras are weak")
+
+# (c) one-page never gives the top role 6, even with strong bullets.
+ok(top_role_bullet_cap(strong7, KW2, "1") == 5, "one-page top cap is 5 (never 6)")
+out_1s = format_resume_content(
+    {"work_history": [{"company": "A", "title": "T", "bullets": list(strong7)}], "skills": []},
+    job_text=JOB2, page_length="1")
+ok(len(out_1s["work_history"][0]["bullets"]) == 5, "one-page top role keeps 5 with strong bullets")
+
+# (d) non-top roles keep their existing caps exactly (indices 1+ unchanged).
+ok(bullet_cap(1, "auto") == 4 and bullet_cap(2, "auto") == 3 and bullet_cap(3, "auto") == 3
+   and bullet_cap(9, "auto") == 3, "auto non-top caps unchanged [_,4,3,3] + tail 3")
+ok(bullet_cap(1, "1") == 3 and bullet_cap(2, "1") == 3 and bullet_cap(3, "1") == 2
+   and bullet_cap(9, "1") == 2, "one-page non-top caps unchanged [_,3,3,2] + tail 2")
+ok(bullet_cap(1, "2") == 5 and bullet_cap(2, "2") == 4 and bullet_cap(3, "2") == 3
+   and bullet_cap(9, "2") == 3, "two-page non-top caps unchanged [_,5,4,3] + tail 3")
+# A second role with 7 strong bullets is still capped at its index-1 cap (4), not 6.
+out_multi = format_resume_content(
+    {"work_history": [
+        {"company": "Top", "title": "T", "bullets": list(strong7)},
+        {"company": "Second", "title": "T", "bullets": list(strong7)},
+    ], "skills": []},
+    job_text=JOB2, page_length="auto")
+ok([len(r["bullets"]) for r in out_multi["work_history"]] == [6, 4],
+   "non-top role capped at index-1 cap (4), not bumped to 6")
+
+# (e) idempotency: the strong-6 top role stays 6 on a second pass.
+once_s = format_resume_content(
+    {"work_history": [{"company": "A", "title": "T", "bullets": list(strong7)}], "skills": []},
+    job_text=JOB2, page_length="auto")
+twice_s = format_resume_content(once_s, job_text=JOB2, page_length="auto")
+ok(once_s == twice_s, "top-role cap pass is idempotent")
+ok(len(twice_s["work_history"][0]["bullets"]) == 6, "top role stays 6 on re-run")
 
 # ---------------------------------------------------------------------------
 # (c) skills: sentence -> tag/drop, dedupe, categorize (not all Other)

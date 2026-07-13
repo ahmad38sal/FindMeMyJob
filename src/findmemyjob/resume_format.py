@@ -7,8 +7,12 @@ dict after generation — and are reused by ``scripts/reformat_resumes.py`` to
 clean existing rows without any LLM call.
 
 Rules enforced:
-  - Bullets per role capped by recency/relevance (recent role keeps more), with
-    a hard cap of 6 and a floor of 2 (never fabricate to reach the floor).
+  - Bullets per role capped by recency/relevance (recent role keeps more). The
+    MOST-RELEVANT (top, index 0) role keeps 5 bullets by default, and may keep a
+    6th ONLY on multi-page targets (auto / two-page) when the source genuinely
+    has a strong 6th bullet (see ``top_role_bullet_cap``); a one-page target
+    never gives the top role more than 5 so it still fits one page. Other roles
+    keep their existing per-index caps. Hard cap 6, floor 2 (never fabricate).
   - When trimming, keep the bullets most relevant to the target job; drop the
     weakest. Original order among the kept bullets is preserved for readability.
   - Each bullet is tightened: weak openers stripped, whitespace collapsed, and
@@ -161,12 +165,27 @@ BULLET_HARD_MAX = 160
 
 # Bullet caps by role position (index 0 = most recent / most relevant). Different
 # page-length targets bias toward fewer/more bullets. Hard cap 6, floor 2.
+#
+# NOTE: the index-0 (top role) entries are the DEFAULT base cap (5). The top
+# role's effective cap is computed dynamically by ``top_role_bullet_cap`` — it
+# may reach 6 on auto/two-page when a strong 6th bullet exists. Indices 1+ are
+# used as-is.
 _BULLET_CAPS = {
-    "1": [4, 3, 3, 2],
-    "2": [6, 5, 4, 3],
-    "auto": [6, 4, 3, 3],
+    "1": [5, 3, 3, 2],
+    "2": [5, 5, 4, 3],
+    "auto": [5, 4, 3, 3],
 }
 _BULLET_CAP_TAIL = {"1": 2, "2": 3, "auto": 3}
+
+# Top-role dynamic cap. Default 5; a 6th bullet is allowed only on multi-page
+# targets when the 6th-best bullet (by _bullet_score) clears this threshold — a
+# "strong" bullet being one with a job-keyword match OR a quantified metric.
+# _bullet_score = keyword-overlap*2 + has-metric, so that definition maps exactly
+# to score >= 1 (keyword -> 2, metric-only -> 1, neither -> 0). A bullet with no
+# keyword and no metric scores 0 and cannot unlock the 6th slot.
+_TOP_ROLE_BASE_CAP = 5
+_TOP_ROLE_MAX_CAP = 6
+_STRONG_BULLET_MIN_SCORE = 1
 
 _WEAK_OPENERS = [
     "was responsible for", "responsible for", "worked on", "helped with",
@@ -295,6 +314,26 @@ def select_bullets(bullets: List[str], keywords: set, cap: int) -> List[str]:
     ranked = sorted(range(len(clean)), key=lambda i: (-_bullet_score(clean[i], keywords), i))
     keep = set(ranked[:cap])
     return [clean[i] for i in range(len(clean)) if i in keep]
+
+
+def top_role_bullet_cap(bullets: List[str], keywords: set, page_length: str = "auto") -> int:
+    """Effective bullet cap for the MOST-RELEVANT (index 0) work-history role.
+
+    Default 5. On a multi-page target (``auto`` / ``2``) a 6th bullet is allowed
+    ONLY when the source has a genuine strong 6th — i.e. the 6th-best bullet by
+    ``_bullet_score`` clears ``_STRONG_BULLET_MIN_SCORE``. A one-page target
+    (``1``) never exceeds 5 so the resume still fits one page. Never returns > 6.
+    Pure and deterministic: the score at rank 6 doesn't depend on tie-breaks.
+    """
+    if page_length not in ("auto", "2"):
+        return _TOP_ROLE_BASE_CAP
+    clean = [b for b in bullets if isinstance(b, str) and b.strip()]
+    if len(clean) < _TOP_ROLE_MAX_CAP:
+        return _TOP_ROLE_BASE_CAP
+    scores = sorted((_bullet_score(b, keywords) for b in clean), reverse=True)
+    if scores[_TOP_ROLE_MAX_CAP - 1] >= _STRONG_BULLET_MIN_SCORE:
+        return _TOP_ROLE_MAX_CAP
+    return _TOP_ROLE_BASE_CAP
 
 
 # ---------------------------------------------------------------------------
@@ -647,9 +686,19 @@ def format_resume_content(
         if "end" in role:
             role["end"] = _clean_date_field(role.get("end"))
         bullets = role.get("bullets") or []
-        cap = bullet_cap(i, page_length)
-        kept = select_bullets(bullets, keywords, cap)
-        role["bullets"] = [b for b in (tighten_bullet(x) for x in kept) if b]
+        if i == 0:
+            # Top role: tighten first, then decide the cap on the bullets AS THEY
+            # WILL RENDER. A run-on that tightens down to a weak fragment must not
+            # unlock the 6th slot, and deciding on the tightened text keeps the
+            # pass idempotent (tighten_bullet is itself a fixed point).
+            clean_src = [b for b in bullets if isinstance(b, str) and b.strip()]
+            tightened = [b for b in (tighten_bullet(x) for x in clean_src) if b]
+            cap = top_role_bullet_cap(tightened, keywords, page_length)
+            role["bullets"] = select_bullets(tightened, keywords, cap)
+        else:
+            cap = bullet_cap(i, page_length)
+            kept = select_bullets(bullets, keywords, cap)
+            role["bullets"] = [b for b in (tighten_bullet(x) for x in kept) if b]
         new_wh.append(role)
     out["work_history"] = new_wh
 
